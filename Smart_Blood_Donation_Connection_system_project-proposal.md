@@ -232,12 +232,11 @@ Các bảng dữ liệu chính dự kiến:
 
 - **Phương pháp**: **Trung bình động (Moving Average)**
 
-Giả sử \(M_1, M_2, M_3\) là lượng máu đã xuất dùng trong 3 tháng gần nhất (theo từng nhóm máu):
+Giả sử M1, M2, M3 là lượng máu đã xuất dùng trong 3 tháng gần nhất (theo từng nhóm máu).
 
-\[
-\text{Forecast} = \frac{M_1 + M_2 + M_3}{3}
-\]
+Công thức dự báo:
 
+`Forecast = (M1 + M2 + M3) / 3`
 - Có thể cấu hình **N tháng gần nhất** (3, 6, …) để tăng/giảm độ nhạy của dự báo.
 
 - **Ứng dụng kết quả**:
@@ -255,17 +254,14 @@ Giả sử \(M_1, M_2, M_3\) là lượng máu đã xuất dùng trong 3 tháng 
   Khi Ngân hàng máu thiếu một nhóm máu nhất định, hệ thống chọn ra **danh sách người hiến phù hợp nhất** thay vì gửi thông báo hàng loạt.
 
 - **Yếu tố chấm điểm**:
-  - \( \text{BloodMatch} \): Mức độ phù hợp nhóm máu (tương thích 0/1 hoặc nhiều mức).  
-  - \( \text{DistanceScore} \): Điểm dựa trên khoảng cách địa lý giữa Donor và điểm hiến.  
-  - \( \text{Eligibility} \): Mức độ sẵn sàng hiến (đã đủ ngày kể từ lần hiến gần nhất, sàng lọc sức khỏe đạt…).  
-  - \( \text{Reliability} \): Độ tin cậy (tỷ lệ đến đủ hẹn, ít huỷ/bùng kèo).
+  - **BloodMatch**: mức độ phù hợp nhóm máu (tương thích 0/1 hoặc nhiều mức).
+  - **DistanceScore**: điểm dựa trên khoảng cách địa lý giữa Donor và điểm hiến.
+  - **Eligibility**: mức độ sẵn sàng hiến (đã đủ ngày kể từ lần hiến gần nhất, sàng lọc sức khỏe đạt…).
+  - **Reliability**: độ tin cậy (tỷ lệ đến đủ hẹn, ít huỷ/bùng kèo).
 
 - **Công thức Weighted Scoring**:
 
-\[
-\text{Score} = w_1(\text{BloodMatch}) + w_2(\text{DistanceScore}) + w_3(\text{Eligibility}) + w_4(\text{Reliability})
-\]
-
+`Score = w1 * BloodMatch + w2 * DistanceScore + w3 * Eligibility + w4 * Reliability`
 Trong đó \(w_1, w_2, w_3, w_4\) là trọng số (tổng có thể chuẩn hóa về 1), có thể cấu hình tùy ưu tiên (ưu tiên nhóm máu phù hợp, ưu tiên gần, ưu tiên người uy tín…).
 
 - **Quy trình**:
