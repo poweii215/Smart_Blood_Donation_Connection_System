@@ -244,8 +244,6 @@ Công thức dự báo:
   - Xác định **mức rủi ro** (Thấp/Trung bình/Cao), hỗ trợ quyết định có cần huy động hay không.  
   - Hiển thị trực quan trên Dashboard bằng biểu đồ.
 
-> Ghi chú: Với phạm vi đồ án, Moving Average là thuật toán phù hợp, dễ cài đặt và dễ giải thích. Trong phần “Hạn chế & Hướng phát triển”, có thể đề xuất mở rộng sang ARIMA, mô hình ML nâng cao.
-
 ---
 
 #### 4.2. Thuật toán khuyến nghị người hiến (Recommendation Engine)
