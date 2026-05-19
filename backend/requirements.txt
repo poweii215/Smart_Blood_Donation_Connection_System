@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-python-jose[cryptography]
-pydantic
-pydantic-settings
-python-multipart
-bcrypt==4.0.1
