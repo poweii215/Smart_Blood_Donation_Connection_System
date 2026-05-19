@@ -1,0 +1,5 @@
+{
+  "name": "SBDCs - Smart Blood Donation Connection system",
+  "description": "A Modular Monolith system for managing blood donations, tracking blood bank inventory, and scheduling appointments.",
+  "requestFramePermissions": []
+}
