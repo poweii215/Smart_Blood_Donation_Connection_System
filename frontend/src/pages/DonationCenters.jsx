@@ -10,7 +10,7 @@ export default function DonationCenters() {
   const [newHosp, setNewHosp] = useState({ name: '', address: '', contact_phone: '', contact_email: '' });
   
   const user = authService.getCurrentUser();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'HOSPITAL_ADMIN';
 
   // Calculate map query based on user location
   const mapQuery = user?.lat && user?.lng 
@@ -50,7 +50,7 @@ export default function DonationCenters() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Donation Centers</h1>
-          <p className="text-gray-500 mt-1">Manage and view blood collection points.</p>
+          <p className="text-gray-500 mt-1">View donation centers and manage hospital collection points.</p>
         </div>
         {isAdmin && (
           <button 

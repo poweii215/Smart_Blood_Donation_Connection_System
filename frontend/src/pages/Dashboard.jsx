@@ -9,7 +9,7 @@ export default function Dashboard() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const user = authService.getCurrentUser();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = ['HOSPITAL_ADMIN'].includes(user?.role);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -59,11 +59,11 @@ export default function Dashboard() {
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
-            {isAdmin ? 'System Overview' : `Hello, ${user.full_name.split(' ')[0]}!`}
+            {isAdmin ? 'Hospital Dashboard' : `Hello, ${user.full_name.split(' ')[0]}!`}
           </h1>
           <p className="text-gray-500 mt-1">
             {isAdmin 
-              ? "Monitor blood supply and manage donation requests." 
+              ? "Manage hospital blood inventory and donation appointments." 
               : "Your contribution saves lives. Track your impact here."}
           </p>
         </div>

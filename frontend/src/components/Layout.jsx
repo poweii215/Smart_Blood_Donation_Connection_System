@@ -18,11 +18,11 @@ export default function Layout({ children }) {
   }
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: ['ADMIN', 'DONOR'] },
-    { name: 'Appointments', path: '/appointments', icon: Calendar, roles: ['ADMIN', 'DONOR'] },
-    { name: 'Donation Centers', path: '/centers', icon: Building2, roles: ['ADMIN', 'DONOR'] },
-    { name: 'Profile', path: '/profile', icon: User, roles: ['ADMIN', 'DONOR'] },
-    { name: 'Inventory', path: '/inventory', icon: Droplets, roles: ['ADMIN'] },
+    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: ['HOSPITAL_ADMIN','DONOR'] },
+    { name: 'Appointments', path: '/appointments', icon: Calendar, roles: ['HOSPITAL_ADMIN','DONOR'] },
+    { name: 'Donation Centers', path: '/centers', icon: Building2, roles: ['HOSPITAL_ADMIN','DONOR'] },
+    { name: 'Profile', path: '/profile', icon: User, roles: ['HOSPITAL_ADMIN','DONOR'] },
+    { name: 'Inventory', path: '/inventory', icon: Droplets, roles: ['HOSPITAL_ADMIN'] },
   ];
 
   return (
@@ -43,7 +43,7 @@ export default function Layout({ children }) {
             <User className="w-4 h-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">{user?.full_name}</span>
             <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
-              {user?.role}
+              {user?.role === 'HOSPITAL_ADMIN' ? 'HOSPITAL' : 'DONOR'}
             </span>
           </div>
           <button 

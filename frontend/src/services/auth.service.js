@@ -1,13 +1,20 @@
 import api from './api';
 
 export const authService = {
-  login: async (credentials) => {
-    const response = await api.post('/auth/login', credentials);
+  requestOtp: async (phone) => {
+    const response = await api.post('/auth/request-otp', { phone });
+    return response.data;
+  },
+  verifyOtp: async ({ phone, otp }) => {
+    const response = await api.post('/auth/verify-otp', { phone, otp });
     if (response.data.token) {
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
     }
     return response.data;
+  },
+  login: async (credentials) => {
+    return authService.verifyOtp(credentials);
   },
   register: async (userData) => {
     const response = await api.post('/auth/register', userData);

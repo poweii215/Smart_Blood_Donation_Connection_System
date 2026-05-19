@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { User, Mail, Droplets, MapPin, Save, CheckCircle2 } from 'lucide-react';
+import { User, Phone, Droplets, MapPin, Save, CheckCircle2 } from 'lucide-react';
 import { authService } from '../services/auth.service';
 
 export default function Profile() {
   const user = authService.getCurrentUser();
   const [formData, setFormData] = useState({
     full_name: user?.full_name || '',
+    phone: user?.phone || '',
     blood_type: user?.blood_type || '',
     lat: user?.lat || '',
     lng: user?.lng || ''
@@ -61,8 +62,8 @@ export default function Profile() {
           <div>
             <h2 className="text-xl font-bold text-gray-900">{user?.full_name}</h2>
             <p className="text-gray-500 flex items-center gap-1.5 text-sm mt-1">
-              <Mail className="w-4 h-4" />
-              {user?.email}
+              <Phone className="w-4 h-4" />
+              {user?.phone}
             </p>
           </div>
         </div>
@@ -93,6 +94,20 @@ export default function Profile() {
             </div>
 
             <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-gray-400 ml-1">Phone</label>
+              <div className="relative">
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3.5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-xs font-bold uppercase tracking-wider text-gray-400 ml-1">Blood Type</label>
               <div className="relative">
                 <Droplets className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -102,8 +117,8 @@ export default function Profile() {
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3.5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all appearance-none"
                 >
                   <option value="">Select Blood Type</option>
-                  {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(type => (
-                    <option key={type} value={type}>{type}</option>
+                  {['UNKNOWN', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(type => (
+                    <option key={type} value={type}>{type === 'UNKNOWN' ? 'Chưa xác định' : type}</option>
                   ))}
                 </select>
               </div>

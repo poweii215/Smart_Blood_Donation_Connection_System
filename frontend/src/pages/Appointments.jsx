@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, MapPin, Clock, Plus, Check, X, AlertCircle, ChevronRight, ChevronLeft, Shield, Activity } from 'lucide-react';
+import { Calendar as CalendarIcon, MapPin, Clock, Plus, Check, X, AlertCircle, ChevronRight, ChevronLeft, Shield, Activity, Award } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { appointmentService } from '../services/appointment.service';
 import { hospitalService } from '../services/hospital.service';
 import { authService } from '../services/auth.service';
@@ -26,7 +27,7 @@ export default function Appointments() {
   });
   
   const user = authService.getCurrentUser();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = ['HOSPITAL_ADMIN'].includes(user?.role);
 
   const fetchAppointments = async () => {
     setLoading(true);
@@ -197,9 +198,19 @@ export default function Appointments() {
                         )}
                       </div>
                     ) : (
-                      <span className="text-xs text-gray-400 italic">
-                        {app.status === 'PENDING' ? 'Awaiting Approval' : 'No actions'}
-                      </span>
+                      app.status === 'COMPLETED' ? (
+                        <Link
+                          to={`/congratulations/${app.id}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 text-xs font-bold transition-colors"
+                        >
+                          <Award className="w-4 h-4" />
+                          Congratulations
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">
+                          {app.status === 'PENDING' ? 'Awaiting Approval' : 'No actions'}
+                        </span>
+                      )
                     )}
                   </td>
                 </tr>

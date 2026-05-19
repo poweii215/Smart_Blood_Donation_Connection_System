@@ -13,6 +13,7 @@ import Appointments from './pages/Appointments';
 import Inventory from './pages/Inventory';
 import DonationCenters from './pages/DonationCenters';
 import Profile from './pages/Profile';
+import Congratulations from './pages/Congratulations';
 import { authService } from './services/auth.service';
 
 function ProtectedRoute({ children, roles }) {
@@ -43,7 +44,7 @@ export default function App() {
           } />
           
           <Route path="/inventory" element={
-            <ProtectedRoute roles={['ADMIN']}>
+            <ProtectedRoute roles={['HOSPITAL_ADMIN']}>
               <Inventory />
             </ProtectedRoute>
           } />
@@ -57,6 +58,18 @@ export default function App() {
           <Route path="/profile" element={
             <ProtectedRoute>
               <Profile />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/congratulations" element={
+            <ProtectedRoute roles={['DONOR']}>
+              <Congratulations />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/congratulations/:appointmentId" element={
+            <ProtectedRoute roles={['DONOR']}>
+              <Congratulations />
             </ProtectedRoute>
           } />
 
