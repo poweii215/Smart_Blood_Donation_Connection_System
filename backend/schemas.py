@@ -1,10 +1,10 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from pydantic import BaseModel
+from typing import Optional
 from enum import Enum
 
 class UserRole(str, Enum):
     DONOR = "DONOR"
-    ADMIN = "ADMIN"
+    HOSPITAL_ADMIN = "HOSPITAL_ADMIN"
 
 class AppointmentStatus(str, Enum):
     PENDING = "PENDING"
@@ -15,19 +15,26 @@ class AppointmentStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 class UserBase(BaseModel):
-    email: EmailStr
+    phone: str
     full_name: str
-    role: UserRole
-    blood_type: Optional[str] = None
+    role: UserRole = UserRole.DONOR
+    blood_type: Optional[str] = "UNKNOWN"
     lat: Optional[float] = None
     lng: Optional[float] = None
 
 class UserCreate(UserBase):
-    password: str
+    password: Optional[str] = None
+    email: Optional[str] = None
 
 class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
+    phone: str
+
+class OTPRequest(BaseModel):
+    phone: str
+
+class OTPVerify(BaseModel):
+    phone: str
+    otp: str
 
 class Token(BaseModel):
     token: str
@@ -52,7 +59,7 @@ class InventoryTransactionCreate(BaseModel):
     hospital_id: int
     blood_type: str
     quantity: float
-    transaction_type: str # IN or OUT
+    transaction_type: str
     note: Optional[str] = None
 
 class AppointmentUpdateStatus(BaseModel):
@@ -60,6 +67,17 @@ class AppointmentUpdateStatus(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
+    phone: Optional[str] = None
     blood_type: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+
+class RecommendationRequest(BaseModel):
+    hospital_id: int
+    blood_type: str
+    radius_km: float = 10
+    top_n: int = 10
+    w_blood: float = 0.4
+    w_distance: float = 0.25
+    w_eligibility: float = 0.2
+    w_reliability: float = 0.15

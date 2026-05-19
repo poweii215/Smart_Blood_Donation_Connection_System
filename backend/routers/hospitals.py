@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_db_connection
-from .auth import get_current_user
+from .auth import get_current_user, ADMIN_ROLES
 from pydantic import BaseModel
 from typing import Optional
 
@@ -25,7 +25,7 @@ async def get_hospitals():
 
 @router.post("/")
 async def create_hospital(data: HospitalBase, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "ADMIN":
+    if current_user["role"] not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Forbidden")
     
     conn = get_db_connection()

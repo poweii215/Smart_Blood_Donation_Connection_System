@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 import os
 
 from .database import init_db
-from .routers import auth, bloodbank, appointments, hospitals
+from .routers import auth, bloodbank, appointments, hospitals, analytics
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -42,6 +42,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(bloodbank.router, prefix="/api/blood-bank", tags=["Blood Bank"])
 app.include_router(appointments.router, prefix="/api/appointments", tags=["Appointments"])
 app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 
 # Health check
 @app.get("/api/health")

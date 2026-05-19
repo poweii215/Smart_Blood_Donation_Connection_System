@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_db_connection
-from .auth import get_current_user
+from .auth import get_current_user, ADMIN_ROLES
 from ..schemas import BloodInventoryBase
 
 router = APIRouter()
@@ -24,7 +24,7 @@ async def get_inventory(hospital_id: Optional[int] = None, current_user: dict = 
 
 @router.get("/alerts")
 async def get_alerts(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "ADMIN":
+    if current_user["role"] not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Forbidden")
     
     conn = get_db_connection()
@@ -41,7 +41,7 @@ async def get_alerts(current_user: dict = Depends(get_current_user)):
 
 @router.put("/inventory")
 async def update_inventory(data: BloodInventoryBase, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "ADMIN":
+    if current_user["role"] not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Forbidden")
     
     conn = get_db_connection()

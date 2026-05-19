@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_db_connection
-from .auth import get_current_user
+from .auth import get_current_user, ADMIN_ROLES
 from ..schemas import AppointmentCreate, AppointmentUpdateStatus
 
 router = APIRouter()
@@ -37,7 +37,7 @@ async def get_my_appointments(current_user: dict = Depends(get_current_user)):
 
 @router.get("/all")
 async def get_all_appointments(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "ADMIN":
+    if current_user["role"] not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Forbidden")
     
     conn = get_db_connection()
@@ -55,7 +55,7 @@ async def get_all_appointments(current_user: dict = Depends(get_current_user)):
 
 @router.patch("/{id}/status")
 async def update_status(id: int, data: AppointmentUpdateStatus, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "ADMIN":
+    if current_user["role"] not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Forbidden")
     
     conn = get_db_connection()

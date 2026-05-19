@@ -31,17 +31,20 @@ def init_db(retry=True):
         cursor.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
+                phone TEXT UNIQUE,
+                email TEXT UNIQUE,
                 password TEXT NOT NULL,
                 full_name TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('DONOR', 'ADMIN')),
-                blood_type TEXT,
+                role TEXT NOT NULL CHECK(role IN ('DONOR', 'HOSPITAL_ADMIN')),
+                blood_type TEXT DEFAULT 'UNKNOWN',
                 lat REAL,
                 lng REAL,
                 reliability_score REAL DEFAULT 100,
+                total_donations INTEGER DEFAULT 0,
                 humanitarian_points INTEGER DEFAULT 0,
                 last_donation_date TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS hospitals (
@@ -101,7 +104,50 @@ def init_db(retry=True):
                 new_value TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS login_otps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone TEXT NOT NULL,
+                otp_code TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_login_otps_phone ON login_otps(phone);
+
+            CREATE TABLE IF NOT EXISTS recommendation_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hospital_id INTEGER NOT NULL,
+                blood_type TEXT NOT NULL,
+                requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_id INTEGER NOT NULL,
+                score REAL NOT NULL,
+                invitation_status TEXT DEFAULT 'SENT' CHECK(invitation_status IN ('SENT','ACCEPTED','DECLINED','NO_RESPONSE')),
+                FOREIGN KEY (hospital_id) REFERENCES hospitals(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
         """)
+
+        # Lightweight migrations for old SQLite files
+        cursor.execute("PRAGMA table_info(users)")
+        user_columns = {row[1] for row in cursor.fetchall()}
+        if "phone" not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+        if "email" not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        if "total_donations" not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN total_donations INTEGER DEFAULT 0")
+        if "updated_at" not in user_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+
+        # Backfill phone for legacy email-based seed users, then keep phone unique with an index.
+        cursor.execute("SELECT id, phone, email FROM users")
+        for row in cursor.fetchall():
+            if not row["phone"]:
+                fallback_phone = f"090000{int(row['id']):04d}"
+                cursor.execute("UPDATE users SET phone = ? WHERE id = ?", (fallback_phone, row["id"]))
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_unique ON users(phone)")
 
         # Seed initial hospital if empty
         cursor.execute("SELECT COUNT(*) as count FROM hospitals")
@@ -129,18 +175,18 @@ def init_db(retry=True):
             from .core.security import get_password_hash
             
             # Ensure admin and donor exist
-            cursor.execute("SELECT COUNT(*) as count FROM users WHERE email = ?", ("admin@sbdcs.com",))
+            cursor.execute("SELECT COUNT(*) as count FROM users WHERE phone = ?", ("0900000001",))
             if cursor.fetchone()["count"] == 0:
                 cursor.execute(
-                    "INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?, ?)",
-                    ("admin@sbdcs.com", get_password_hash("admin123"), "System Admin", "ADMIN")
+                    "INSERT INTO users (phone, email, password, full_name, role) VALUES (?, ?, ?, ?, ?)",
+                    ("0900000001", "admin@sbdcs.com", get_password_hash("admin123"), "Hospital Staff", "HOSPITAL_ADMIN")
                 )
             
-            cursor.execute("SELECT COUNT(*) as count FROM users WHERE email = ?", ("donor@sbdcs.com",))
+            cursor.execute("SELECT COUNT(*) as count FROM users WHERE phone = ?", ("0900000002",))
             if cursor.fetchone()["count"] == 0:
                 cursor.execute(
-                    "INSERT INTO users (email, password, full_name, role, blood_type) VALUES (?, ?, ?, ?, ?)",
-                    ("donor@sbdcs.com", get_password_hash("donor123"), "John Donor", "DONOR", "O+")
+                    "INSERT INTO users (phone, email, password, full_name, role, blood_type, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    ("0900000002", "donor@sbdcs.com", get_password_hash("donor123"), "John Donor", "DONOR", "O+", 10.78, 106.68)
                 )
 
             blood_types = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
@@ -184,13 +230,14 @@ def init_db(retry=True):
 
             for i in range(50):
                 email = f"donor{i+1}@example.com"
-                cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+                phone = f"091{(i+1):07d}"
+                cursor.execute("SELECT id FROM users WHERE phone = ?", (phone,))
                 if not cursor.fetchone():
                     full_name = f"{random.choice(names)} {random.choice(m_names)} {random.choice(l_names)}"
                     b_type = random.choice(blood_types)
                     cursor.execute(
-                        "INSERT INTO users (email, password, full_name, role, blood_type, humanitarian_points, reliability_score) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (email, get_password_hash("password123"), full_name, "DONOR", b_type, random.randint(0, 1200), random.randint(80, 100))
+                        "INSERT INTO users (phone, email, password, full_name, role, blood_type, humanitarian_points, reliability_score, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (phone, email, get_password_hash("password123"), full_name, "DONOR", b_type, random.randint(0, 1200), random.randint(80, 100), 10.70 + random.random()*0.15, 106.62 + random.random()*0.12)
                     )
                     donor_ids.append(cursor.lastrowid)
 
