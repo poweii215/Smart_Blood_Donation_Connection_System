@@ -1,64 +1,88 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SBDCs - Single Hospital Blood Donation System
 
-# Run and deploy your AI Studio app
+Phiên bản này đã được đơn giản hóa theo hướng **1 hospital duy nhất**.
 
-This contains everything you need to run your app locally.
+## Thay đổi chính
 
-View your app in AI Studio: https://ai.studio/apps/aa781c78-41b2-4e1f-9853-593fc1f17ad8
+- Bỏ giao diện nhiều trung tâm hiến máu / donation centers.
+- Bỏ Google Maps, lat/lng, distance score và chọn điểm gần nhất.
+- Đăng nhập nhanh chỉ bằng số điện thoại, không OTP, không password.
+- Hệ thống chỉ còn 2 giao diện: Donor và Hospital.
+- Thêm Emergency Mode khi nhóm máu xuống dưới mức nguy hiểm.
+- Thêm Reliability Score cho người hiến.
+- Thêm Eligibility Countdown theo chu kỳ 84 ngày sau lần hiến gần nhất.
+- Thêm Achievement System: Bronze, Silver, Gold, Platinum.
+- Thêm Donation Impact Message sau khi hiến máu.
 
-## Run Locally
+## Tài khoản demo
 
-**Prerequisites:**  Node.js
+Hospital:
 
+```text
+0900000001
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Donor:
 
-## Update: Phone Login + Blood Donation Core Features
+```text
+0900000002
+```
 
-### Authentication
-- Login now uses `phone only` instead of `email + password`.
-- Registration requires `phone`, `full_name`, `password`, `role`, and optional `email`.
-- Supported roles: `DONOR` and `HOSPITAL_ADMIN` only. The UI has two main modes: Donor and Hospital.
-- Demo accounts after database initialization:
-  - Hospital: `0900000001`
-  - Donor: `0900000002`
+Số điện thoại mới sẽ được tự tạo thành tài khoản Donor.
 
-### Added/Extended Backend Features
-- Phone-based auth API: `/api/auth/register`, `/api/auth/login`.
-- Profile update supports phone, blood type, and coordinates.
-- Blood bank inventory still supports CRUD-style update with audit log.
-- Added `recommendation_results` table.
-- Added analytics endpoints:
-  - `GET /api/analytics/summary`
-  - `GET /api/analytics/forecast?months=3`
-  - `POST /api/analytics/recommendations`
+## Chạy backend
 
-### Algorithms
-- Demand forecasting uses configurable moving average over recent OUT transactions.
-- Recommendation engine uses weighted scoring:
-  - Blood match
-  - Distance score using Haversine distance
-  - Eligibility based on last donation date
-  - Reliability score
+Từ thư mục gốc project:
 
-### Frontend Changes
-- Login screen now uses phone number only; Register still collects account details.
-- Donor can select `Chưa xác định` for blood type.
-- Profile shows and edits phone number.
-- Only Donor and Hospital interfaces are shown in protected routes and navigation.
+```bash
+conda activate sbdc
+python -m uvicorn backend.main:app --reload
+```
 
-## Cập nhật đăng nhập OTP
+Backend chạy tại:
 
-Luồng đăng nhập hiện tại dùng 2 bước:
+```text
+http://127.0.0.1:8000
+```
 
-1. Nhập số điện thoại tại màn hình Login.
-2. Hệ thống gọi `POST /api/auth/request-otp` để tạo OTP 6 số.
-3. Người dùng nhập OTP, hệ thống gọi `POST /api/auth/verify-otp` để cấp token.
+Swagger:
 
-Trong môi trường demo/local, OTP được trả về trong response và in ra console backend để dễ kiểm thử. Khi triển khai thật, thay phần này bằng dịch vụ gửi SMS như Twilio, Firebase Authentication hoặc Zalo/SMS Gateway và không trả `otp_code` về frontend.
+```text
+http://127.0.0.1:8000/docs
+```
+
+## Chạy frontend
+
+Từ thư mục chứa `package.json`:
+
+```bash
+npm install
+npm start
+```
+
+Frontend chạy tại:
+
+```text
+http://localhost:5173
+```
+
+## Flow demo đề xuất
+
+1. Đăng nhập Donor bằng `0900000002`.
+2. Tạo lịch hiến máu.
+3. Đăng xuất, đăng nhập Hospital bằng `0900000001`.
+4. Duyệt lịch: PENDING → APPROVED → CHECKED_IN → IN_PROGRESS → COMPLETED.
+5. Đăng nhập lại Donor.
+6. Vào Appointments và mở màn hình Congratulations.
+7. Kiểm tra Dashboard: điểm nhân đạo, achievement, countdown, impact message.
+8. Vào Inventory bằng Hospital để xem Emergency Mode.
+
+## Recommendation mới
+
+Không còn DistanceScore.
+
+```text
+Score = w1 * BloodMatch + w2 * Eligibility + w3 * Reliability + w4 * HumanitarianPoints
+```
+
+Điều này phù hợp với tinh thần: giảm rào cản, khuyến khích hiến máu nhân đạo.
