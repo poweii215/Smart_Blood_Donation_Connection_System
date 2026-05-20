@@ -86,3 +86,25 @@ Score = w1 * BloodMatch + w2 * Eligibility + w3 * Reliability + w4 * Humanitaria
 ```
 
 Điều này phù hợp với tinh thần: giảm rào cản, khuyến khích hiến máu nhân đạo.
+
+## Avatar upload
+
+Trang Profile hỗ trợ đổi ảnh đại diện:
+
+- Frontend: chọn ảnh trong Profile và bấm `Lưu ảnh đại diện`.
+- Backend API: `POST /api/auth/profile/avatar` với `multipart/form-data`, field `file`.
+- Ảnh được lưu tại `uploads/avatars/` và được truy cập qua `/uploads/avatars/<filename>`.
+- Hỗ trợ JPG, PNG, WEBP, GIF; tối đa 3MB.
+
+
+## Hospital: Export donor list to Excel
+
+Hospital Admin can download an Excel file from the Dashboard using the **Export Donors Excel** button.
+
+The exported file includes donor name, phone, blood type, reliability score, humanitarian points, total donations, appointment statistics, eligibility countdown, and achievement badge.
+
+API endpoint:
+
+```text
+GET /api/analytics/donors/export
+```

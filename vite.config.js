@@ -33,6 +33,10 @@ export default defineConfig(({mode}) => {
           target: 'http://localhost:8000',
           changeOrigin: true,
         },
+        '/uploads': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
         '/openapi.json': {
           target: 'http://localhost:8000',
           changeOrigin: true,
