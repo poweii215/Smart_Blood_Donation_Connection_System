@@ -32,7 +32,7 @@ export default function Register() {
           <div className="p-8 pb-0 flex flex-col items-center">
             <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-200 mb-6"><Droplets className="text-white w-10 h-10" /></div>
             <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Đăng ký SBDCs</h1>
-            <p className="text-gray-500 mt-2 text-center">Tạo tài khoản bằng số điện thoại. Khi đăng nhập sẽ dùng OTP.</p>
+            <p className="text-gray-500 mt-2 text-center">Tạo hồ sơ bằng số điện thoại. Khi đăng nhập chỉ cần nhập số điện thoại.</p>
           </div>
           <form onSubmit={handleSubmit} className="p-8 grid grid-cols-1 md:grid-cols-2 gap-5">
             {error && <div className="col-span-full bg-red-50 text-red-600 p-4 rounded-xl text-sm font-medium border border-red-100">{error}</div>}

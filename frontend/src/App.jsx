@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -11,7 +6,6 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Appointments from './pages/Appointments';
 import Inventory from './pages/Inventory';
-import DonationCenters from './pages/DonationCenters';
 import Profile from './pages/Profile';
 import Congratulations from './pages/Congratulations';
 import { authService } from './services/auth.service';
@@ -30,53 +24,15 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/appointments" element={
-            <ProtectedRoute>
-              <Appointments />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/inventory" element={
-            <ProtectedRoute roles={['HOSPITAL_ADMIN']}>
-              <Inventory />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/centers" element={
-            <ProtectedRoute>
-              <DonationCenters />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/profile" element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/congratulations" element={
-            <ProtectedRoute roles={['DONOR']}>
-              <Congratulations />
-            </ProtectedRoute>
-          } />
-
-          <Route path="/congratulations/:appointmentId" element={
-            <ProtectedRoute roles={['DONOR']}>
-              <Congratulations />
-            </ProtectedRoute>
-          } />
-
+          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
+          <Route path="/inventory" element={<ProtectedRoute roles={['HOSPITAL_ADMIN']}><Inventory /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/congratulations" element={<ProtectedRoute roles={['DONOR']}><Congratulations /></ProtectedRoute>} />
+          <Route path="/congratulations/:appointmentId" element={<ProtectedRoute roles={['DONOR']}><Congratulations /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Layout>
     </Router>
   );
 }
-

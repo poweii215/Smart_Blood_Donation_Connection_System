@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Droplets, AlertTriangle, TrendingUp, Users, Calendar, CheckCircle2, Clock, User, Shield, Siren, Award, HeartHandshake, Download } from 'lucide-react';
+import { Droplets, AlertTriangle, TrendingUp, Users, Calendar, CheckCircle2, Clock, User, Shield, Siren, Award, HeartHandshake } from 'lucide-react';
 import { bloodBankService } from '../services/bloodbank.service';
 import { appointmentService } from '../services/appointment.service';
 import { analyticsService } from '../services/analytics.service';
@@ -10,36 +10,8 @@ export default function Dashboard() {
   const [appointments, setAppointments] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [exportStatus, setExportStatus] = useState('ALL');
-  const [exportDate, setExportDate] = useState(new Date().toISOString().slice(0, 10));
   const user = authService.getCurrentUser();
   const isAdmin = user?.role === 'HOSPITAL_ADMIN';
-
-  const downloadExcel = (blob, filename) => {
-    const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const handleExportExcel = async () => {
-    try {
-      if (exportStatus === 'DONORS') {
-        const blob = await analyticsService.exportDonors();
-        downloadExcel(blob, `donor_list_${new Date().toISOString().slice(0, 10)}.xlsx`);
-        return;
-      }
-      const blob = await analyticsService.exportTodayAppointments({ status: exportStatus, report_date: exportDate });
-      downloadExcel(blob, `appointments_${exportDate}_${exportStatus.toLowerCase()}.xlsx`);
-    } catch (err) {
-      console.error('Failed to export excel', err);
-      alert('Không thể xuất file Excel. Vui lòng thử lại.');
-    }
-  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -75,43 +47,7 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">{isAdmin ? 'Hospital Dashboard' : `Hello, ${user.full_name?.split(' ')[0] || 'Donor'}!`}</h1>
           <p className="text-gray-500 mt-1">{isAdmin ? 'Single hospital blood inventory, appointments and emergency monitoring.' : 'Your humanitarian journey and donation impact.'}</p>
         </div>
-        {isAdmin ? (
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
-            <input
-              type="date"
-              value={exportDate}
-              onChange={(e) => setExportDate(e.target.value)}
-              disabled={exportStatus === 'DONORS'}
-              className="min-w-[150px] rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-red-400 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-            />
-            <select
-              value={exportStatus}
-              onChange={(e) => setExportStatus(e.target.value)}
-              className="min-w-[240px] rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-red-400"
-            >
-              <option value="ALL">Tất cả lịch trong ngày</option>
-              <option value="EXPECTED">Người dự kiến đến</option>
-              <option value="ARRIVED">Người đã đến</option>
-              <option value="ACTIVE">Đang ở bệnh viện</option>
-              <option value="DONE">Đã hiến xong</option>
-              <option value="PENDING">Chờ duyệt</option>
-              <option value="APPROVED">Đã duyệt</option>
-              <option value="CHECKED_IN">Đã check-in</option>
-              <option value="IN_PROGRESS">Đang hiến</option>
-              <option value="COMPLETED">Hoàn tất</option>
-              <option value="CANCELLED">Đã huỷ</option>
-              <option value="DONORS">Danh sách người hiến</option>
-            </select>
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-red-100 hover:bg-red-700 transition-colors whitespace-nowrap"
-            >
-              <Download className="w-4 h-4" />
-              Export Excel
-            </button>
-          </div>
-        ) : <div className="flex items-center gap-4 flex-wrap"><BadgeCard achievement={achievement} /><InfoPill label="Reliability" value={`${Math.round(summary?.reliability_score ?? user?.reliability_score ?? 100)}%`} /><BloodPill bloodType={user?.blood_type || 'UNKNOWN'} /></div>}
+        {!isAdmin && <div className="flex items-center gap-4 flex-wrap"><BadgeCard achievement={achievement} /><InfoPill label="Reliability" value={`${Math.round(summary?.reliability_score ?? user?.reliability_score ?? 100)}%`} /><BloodPill bloodType={user?.blood_type || 'UNKNOWN'} /></div>}
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

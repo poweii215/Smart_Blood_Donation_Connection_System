@@ -27,16 +27,5 @@ export const authService = {
       localStorage.setItem('user', JSON.stringify(response.data.user));
     }
     return response.data;
-  },
-  uploadAvatar: async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await api.post('/auth/profile/avatar', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    if (response.data.user) {
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-    }
-    return response.data;
   }
 };
