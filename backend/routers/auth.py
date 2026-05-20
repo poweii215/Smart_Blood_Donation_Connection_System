@@ -1,18 +1,13 @@
-from datetime import datetime, timedelta
-import random
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..database import get_db_connection
-from ..core.security import decode_token, get_password_hash, create_access_token
-from ..schemas import UserLogin, UserCreate, Token, UserUpdate, OTPRequest, OTPVerify
+from ..core.security import decode_token, create_access_token
+from ..schemas import UserLogin, UserCreate, Token, UserUpdate
 
 router = APIRouter()
 security = HTTPBearer()
-
 ADMIN_ROLES = {"HOSPITAL_ADMIN"}
-OTP_EXPIRE_MINUTES = 5
 
 
 def normalize_phone(phone: str) -> str:
@@ -43,10 +38,10 @@ async def register(user: UserCreate):
         role = user.role.value if hasattr(user.role, 'value') else user.role
         cursor.execute(
             """
-            INSERT INTO users (phone, email, password, full_name, role, blood_type, lat, lng)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (phone, email, password, full_name, role, blood_type)
+            VALUES (?, ?, 'phone-login', ?, ?, ?)
             """,
-            (phone, user.email, get_password_hash(user.password or "otp-login"), user.full_name, role, user.blood_type or "UNKNOWN", user.lat, user.lng)
+            (phone, user.email, user.full_name or "New Donor", role, user.blood_type or "UNKNOWN")
         )
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Registered successfully"}
@@ -60,39 +55,48 @@ async def register(user: UserCreate):
         conn.close()
 
 
-@router.post("/request-otp")
-async def request_otp(data: OTPRequest):
-    phone = normalize_phone(data.phone)
+@router.post("/login", response_model=Token)
+async def login(credentials: UserLogin):
+    """Phone-only login for low-friction blood donation demo.
+
+    Demo accounts:
+    - 0900000001: Hospital Admin
+    - 0900000002: Donor
+    Unknown phone numbers are welcomed as new DONOR accounts.
+    """
+    phone = normalize_phone(credentials.phone)
     if len(phone) < 9:
         raise HTTPException(status_code=400, detail="Số điện thoại không hợp lệ")
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id FROM users WHERE phone = ?", (phone,))
+        cursor.execute("SELECT * FROM users WHERE phone = ?", (phone,))
         user = cursor.fetchone()
         if not user:
-            raise HTTPException(status_code=404, detail="Số điện thoại chưa được đăng ký")
+            full_name = f"Donor {phone[-4:]}"
+            role = "HOSPITAL_ADMIN" if phone == "0900000001" else "DONOR"
+            cursor.execute(
+                "INSERT INTO users (phone, password, full_name, role, blood_type) VALUES (?, 'phone-login', ?, ?, 'UNKNOWN')",
+                (phone, full_name, role)
+            )
+            conn.commit()
+            cursor.execute("SELECT * FROM users WHERE phone = ?", (phone,))
+            user = cursor.fetchone()
 
-        otp = f"{random.randint(0, 999999):06d}"
-        expires_at = (datetime.utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES)).isoformat()
-
-        cursor.execute("UPDATE login_otps SET used = 1 WHERE phone = ? AND used = 0", (phone,))
-        cursor.execute(
-            "INSERT INTO login_otps (phone, otp_code, expires_at, used) VALUES (?, ?, ?, 0)",
-            (phone, otp, expires_at)
-        )
-        conn.commit()
-
-        # Demo/local mode: return OTP so the app can be tested without paid SMS provider.
-        # Production: replace this block with Twilio/Firebase/Zalo SMS and do not return otp_code.
-        print(f"[SBDCs OTP] Phone={phone} OTP={otp} expires={expires_at}")
-        return {
-            "message": "Mã OTP đã được gửi đến số điện thoại.",
-            "phone": phone,
-            "expires_in_minutes": OTP_EXPIRE_MINUTES,
-            "otp_code": otp
-        }
+        user_dict = public_user(user)
+        token = create_access_token(data={
+            "id": user["id"],
+            "role": user["role"],
+            "phone": user["phone"],
+            "full_name": user["full_name"],
+            "blood_type": user["blood_type"],
+            "reliability_score": user["reliability_score"],
+            "humanitarian_points": user["humanitarian_points"],
+            "total_donations": user["total_donations"],
+            "last_donation_date": user["last_donation_date"],
+        })
+        return {"token": token, "user": user_dict}
     except HTTPException:
         raise
     except Exception as e:
@@ -102,61 +106,14 @@ async def request_otp(data: OTPRequest):
         conn.close()
 
 
-@router.post("/verify-otp", response_model=Token)
-async def verify_otp(data: OTPVerify):
-    phone = normalize_phone(data.phone)
-    otp = data.otp.strip()
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT * FROM users WHERE phone = ?", (phone,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=401, detail="Số điện thoại chưa được đăng ký")
-
-        cursor.execute(
-            """
-            SELECT * FROM login_otps
-            WHERE phone = ? AND otp_code = ? AND used = 0
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (phone, otp)
-        )
-        otp_row = cursor.fetchone()
-        if not otp_row:
-            raise HTTPException(status_code=401, detail="Mã OTP không đúng hoặc đã được sử dụng")
-
-        expires_at = datetime.fromisoformat(otp_row["expires_at"])
-        if datetime.utcnow() > expires_at:
-            cursor.execute("UPDATE login_otps SET used = 1 WHERE id = ?", (otp_row["id"],))
-            conn.commit()
-            raise HTTPException(status_code=401, detail="Mã OTP đã hết hạn")
-
-        cursor.execute("UPDATE login_otps SET used = 1 WHERE id = ?", (otp_row["id"],))
-        conn.commit()
-
-        user_dict = public_user(user)
-        token = create_access_token(data={
-            "id": user["id"],
-            "role": user["role"],
-            "phone": user["phone"],
-            "full_name": user["full_name"]
-        })
-        return {"token": token, "user": user_dict}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        conn.close()
+@router.post("/request-otp")
+async def request_otp():
+    raise HTTPException(status_code=400, detail="Hệ thống đã chuyển sang đăng nhập nhanh bằng số điện thoại, không dùng OTP.")
 
 
-@router.post("/login", response_model=Token)
-async def login(credentials: UserLogin):
-    """Backward-compatible alias for old clients. Use /request-otp + /verify-otp in the UI."""
-    raise HTTPException(status_code=400, detail="Vui lòng đăng nhập bằng OTP: gửi /request-otp rồi xác thực /verify-otp")
+@router.post("/verify-otp")
+async def verify_otp():
+    raise HTTPException(status_code=400, detail="Hệ thống đã chuyển sang đăng nhập nhanh bằng số điện thoại, không dùng OTP.")
 
 
 @router.patch("/profile")

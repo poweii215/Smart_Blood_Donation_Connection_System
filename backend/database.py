@@ -1,41 +1,49 @@
 import sqlite3
 import os
 import time
+from datetime import datetime, timedelta
 
 DB_PATH = os.path.join(os.getcwd(), "database.sqlite")
+DEFAULT_HOSPITAL_ID = 1
+
+BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+
+def _column_names(cursor, table):
+    cursor.execute(f"PRAGMA table_info({table})")
+    return {row[1] for row in cursor.fetchall()}
+
+
 def init_db(retry=True):
     print(f"DEBUG: Initializing database at {os.path.abspath(DB_PATH)}")
-    
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        
-        # Check integrity first
+
         try:
             cursor.execute("PRAGMA integrity_check")
             res = cursor.fetchone()
             if res and res[0] != "ok":
-                raise sqlite3.DatabaseError("Integrity check failed")
+                raise sqlite3.DatabaseError("database disk image is malformed")
         except sqlite3.DatabaseError:
             raise sqlite3.DatabaseError("database disk image is malformed")
 
-        # Create all tables in one go
         cursor.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                phone TEXT UNIQUE,
+                phone TEXT UNIQUE NOT NULL,
                 email TEXT UNIQUE,
-                password TEXT NOT NULL,
-                full_name TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('DONOR', 'HOSPITAL_ADMIN')),
+                password TEXT DEFAULT 'phone-login',
+                full_name TEXT NOT NULL DEFAULT 'New Donor',
+                role TEXT NOT NULL CHECK(role IN ('DONOR', 'HOSPITAL_ADMIN')) DEFAULT 'DONOR',
                 blood_type TEXT DEFAULT 'UNKNOWN',
                 lat REAL,
                 lng REAL,
@@ -61,37 +69,35 @@ def init_db(retry=True):
 
             CREATE TABLE IF NOT EXISTS blood_inventory (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                hospital_id INTEGER,
+                hospital_id INTEGER DEFAULT 1,
                 blood_type TEXT NOT NULL,
                 quantity REAL DEFAULT 0,
                 safety_threshold REAL DEFAULT 10,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (hospital_id) REFERENCES hospitals(id),
                 UNIQUE(hospital_id, blood_type)
             );
 
             CREATE TABLE IF NOT EXISTS inventory_transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                hospital_id INTEGER NOT NULL,
+                hospital_id INTEGER DEFAULT 1,
                 blood_type TEXT NOT NULL,
                 quantity REAL NOT NULL,
                 transaction_type TEXT CHECK(transaction_type IN ('IN', 'OUT')),
                 note TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (hospital_id) REFERENCES hospitals(id)
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS appointments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 donor_id INTEGER NOT NULL,
-                hospital_id INTEGER NOT NULL,
+                hospital_id INTEGER DEFAULT 1,
                 appointment_date TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'APPROVED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
                 pre_screening_result TEXT,
                 notes TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (donor_id) REFERENCES users(id),
-                FOREIGN KEY (hospital_id) REFERENCES hospitals(id)
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (donor_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS audit_logs (
@@ -105,216 +111,142 @@ def init_db(retry=True):
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS login_otps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                phone TEXT NOT NULL,
-                otp_code TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                used INTEGER DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_login_otps_phone ON login_otps(phone);
-
             CREATE TABLE IF NOT EXISTS recommendation_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                hospital_id INTEGER NOT NULL,
+                hospital_id INTEGER DEFAULT 1,
                 blood_type TEXT NOT NULL,
                 requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 user_id INTEGER NOT NULL,
                 score REAL NOT NULL,
                 invitation_status TEXT DEFAULT 'SENT' CHECK(invitation_status IN ('SENT','ACCEPTED','DECLINED','NO_RESPONSE')),
-                FOREIGN KEY (hospital_id) REFERENCES hospitals(id),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
         """)
 
-        # Lightweight migrations for old SQLite files
-        cursor.execute("PRAGMA table_info(users)")
-        user_columns = {row[1] for row in cursor.fetchall()}
-        if "phone" not in user_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT")
-        if "email" not in user_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
-        if "total_donations" not in user_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN total_donations INTEGER DEFAULT 0")
-        if "updated_at" not in user_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+        # Lightweight migrations for older DB files
+        user_cols = _column_names(cursor, 'users')
+        migrations = {
+            'phone': "ALTER TABLE users ADD COLUMN phone TEXT",
+            'email': "ALTER TABLE users ADD COLUMN email TEXT",
+            'password': "ALTER TABLE users ADD COLUMN password TEXT DEFAULT 'phone-login'",
+            'full_name': "ALTER TABLE users ADD COLUMN full_name TEXT DEFAULT 'New Donor'",
+            'role': "ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'DONOR'",
+            'blood_type': "ALTER TABLE users ADD COLUMN blood_type TEXT DEFAULT 'UNKNOWN'",
+            'reliability_score': "ALTER TABLE users ADD COLUMN reliability_score REAL DEFAULT 100",
+            'total_donations': "ALTER TABLE users ADD COLUMN total_donations INTEGER DEFAULT 0",
+            'humanitarian_points': "ALTER TABLE users ADD COLUMN humanitarian_points INTEGER DEFAULT 0",
+            'last_donation_date': "ALTER TABLE users ADD COLUMN last_donation_date TEXT",
+            'updated_at': "ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+        }
+        for col, sql in migrations.items():
+            if col not in user_cols:
+                cursor.execute(sql)
 
-        # Backfill phone for legacy email-based seed users, then keep phone unique with an index.
-        cursor.execute("SELECT id, phone, email FROM users")
-        for row in cursor.fetchall():
-            if not row["phone"]:
-                fallback_phone = f"090000{int(row['id']):04d}"
-                cursor.execute("UPDATE users SET phone = ? WHERE id = ?", (fallback_phone, row["id"]))
+        # Keep only one hospital in the system. The extra hospitals are intentionally not used.
+        cursor.execute("SELECT id FROM hospitals WHERE id = 1")
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT OR IGNORE INTO hospitals (id, name, address, lat, lng, contact_phone, contact_email, status) VALUES (1, ?, ?, ?, ?, ?, ?, 'ACTIVE')",
+                ("Central Blood Donation Hospital", "Main Blood Donation Center", None, None, "1900-0000", "bloodcenter@example.com")
+            )
+        cursor.execute("UPDATE hospitals SET name=?, address=?, status='ACTIVE' WHERE id=1", ("Central Blood Donation Hospital", "Main Blood Donation Center"))
+        cursor.execute("DELETE FROM hospitals WHERE id <> 1")
+
+        # Collapse any legacy multi-hospital inventory into one hospital.
+        cursor.execute("""
+            SELECT blood_type, SUM(quantity) AS quantity, AVG(safety_threshold) AS safety_threshold
+            FROM blood_inventory
+            GROUP BY blood_type
+        """)
+        merged_inventory = {row["blood_type"]: (row["quantity"] or 0, row["safety_threshold"] or 10) for row in cursor.fetchall()}
+        cursor.execute("DELETE FROM blood_inventory")
+        for b_type in BLOOD_TYPES:
+            qty, threshold = merged_inventory.get(b_type, (8 if b_type in ('O-', 'A-') else 15, 10))
+            cursor.execute(
+                "INSERT INTO blood_inventory (hospital_id, blood_type, quantity, safety_threshold) VALUES (1, ?, ?, ?)",
+                (b_type, qty, threshold)
+            )
+        cursor.execute("UPDATE appointments SET hospital_id = 1 WHERE hospital_id IS NULL OR hospital_id <> 1")
+        cursor.execute("UPDATE inventory_transactions SET hospital_id = 1 WHERE hospital_id IS NULL OR hospital_id <> 1")
+
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_unique ON users(phone)")
 
-        # Seed initial hospital if empty
-        cursor.execute("SELECT COUNT(*) as count FROM hospitals")
-        if cursor.fetchone()["count"] == 0:
-            print("DEBUG: Seeding initial hospital...")
+        # Seed demo users
+        cursor.execute("SELECT id FROM users WHERE phone = '0900000001'")
+        if not cursor.fetchone():
             cursor.execute(
-                "INSERT INTO hospitals (name, address, lat, lng, contact_phone) VALUES (?, ?, ?, ?, ?)",
-                ("Central Blood Center", "123 Healthcare Ave", 10.762622, 106.660172, "0123456789")
+                "INSERT INTO users (phone, email, password, full_name, role, blood_type, reliability_score, humanitarian_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ('0900000001', 'hospital@sbdcs.com', 'phone-login', 'Hospital Admin', 'HOSPITAL_ADMIN', 'UNKNOWN', 100, 0)
             )
-            hospital_id = cursor.lastrowid
-            
-            blood_types = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
-            for b_type in blood_types:
-                cursor.execute(
-                    "INSERT INTO blood_inventory (hospital_id, blood_type, quantity, safety_threshold) VALUES (?, ?, ?, ?)", 
-                    (hospital_id, b_type, 0, 10)
-                )
-        
-        # Seed initial users if empty
-        cursor.execute("SELECT COUNT(*) as count FROM users")
-        if cursor.fetchone()["count"] <= 2: # Only if we only have the defaults
-            print("DEBUG: Seeding extensive test data...")
-            import random
-            from datetime import datetime, timedelta
-            from .core.security import get_password_hash
-            
-            # Ensure admin and donor exist
-            cursor.execute("SELECT COUNT(*) as count FROM users WHERE phone = ?", ("0900000001",))
-            if cursor.fetchone()["count"] == 0:
-                cursor.execute(
-                    "INSERT INTO users (phone, email, password, full_name, role) VALUES (?, ?, ?, ?, ?)",
-                    ("0900000001", "admin@sbdcs.com", get_password_hash("admin123"), "Hospital Staff", "HOSPITAL_ADMIN")
-                )
-            
-            cursor.execute("SELECT COUNT(*) as count FROM users WHERE phone = ?", ("0900000002",))
-            if cursor.fetchone()["count"] == 0:
-                cursor.execute(
-                    "INSERT INTO users (phone, email, password, full_name, role, blood_type, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    ("0900000002", "donor@sbdcs.com", get_password_hash("donor123"), "John Donor", "DONOR", "O+", 10.78, 106.68)
-                )
 
-            blood_types = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
-            
-            # 1. Seed more Hospitals
-            hospitals_data = [
-                ("Cho Ray Hospital", "201B Nguyen Chi Thanh, District 5, HCMC", 10.7578, 106.6635),
-                ("Tu Du Hospital", "284 Cong Quynh, District 1, HCMC", 10.7681, 106.6821),
-                ("Blood Transfusion Hematology Hospital", "118 Hong Bang, District 5, HCMC", 10.7546, 106.6641),
-                ("Gia Dinh People's Hospital", "1 No Trang Long, Binh Thanh, HCMC", 10.8035, 106.6942),
-                ("115 People's Hospital", "527 Su Van Hanh, District 10, HCMC", 10.7758, 106.6668)
+        cursor.execute("SELECT id FROM users WHERE phone = '0900000002'")
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT INTO users (phone, email, password, full_name, role, blood_type, reliability_score, humanitarian_points, total_donations) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ('0900000002', 'donor@sbdcs.com', 'phone-login', 'Nguyen Van Donor', 'DONOR', 'O+', 95, 120, 2)
+            )
+
+        # Seed realistic donors only if data is small
+        cursor.execute("SELECT COUNT(*) AS c FROM users WHERE role='DONOR'")
+        if cursor.fetchone()["c"] < 12:
+            sample_donors = [
+                ('0910000001', 'Tran Minh Anh', 'A+', 92, 240, 3, 120),
+                ('0910000002', 'Le Hoang Nam', 'O-', 98, 800, 9, 100),
+                ('0910000003', 'Pham Ngoc Mai', 'B+', 88, 160, 2, 40),
+                ('0910000004', 'Hoang Duc Huy', 'AB+', 76, 60, 1, 200),
+                ('0910000005', 'Bui Thanh Lam', 'A-', 99, 560, 6, 92),
+                ('0910000006', 'Vu Quang Kiet', 'O+', 84, 320, 4, 10),
+                ('0910000007', 'Dang Gia Han', 'B-', 90, 410, 5, 95),
+                ('0910000008', 'Nguyen Phuong Linh', 'AB-', 96, 900, 10, 130),
+                ('0910000009', 'Tran Bao Chau', 'UNKNOWN', 100, 30, 0, None),
+                ('0910000010', 'Le Anh Tuan', 'O+', 70, 50, 1, 160),
             ]
-            
-            hospital_ids = []
-            for name, addr, lat, lng in hospitals_data:
-                cursor.execute("SELECT id FROM hospitals WHERE name = ?", (name,))
-                existing = cursor.fetchone()
-                if not existing:
-                    cursor.execute(
-                        "INSERT INTO hospitals (name, address, lat, lng, contact_phone, contact_email) VALUES (?, ?, ?, ?, ?, ?)",
-                        (name, addr, lat, lng, f"028{random.randint(1000000, 9999999)}", f"contact@{name.lower().replace(' ', '')}.vn")
-                    )
-                    h_id = cursor.lastrowid
-                else:
-                    h_id = existing["id"]
-                hospital_ids.append(h_id)
-                
-                # Seed Inventory
-                for b_type in blood_types:
-                    qty = round(random.uniform(2.0, 25.0), 1)
-                    cursor.execute(
-                        "INSERT OR IGNORE INTO blood_inventory (hospital_id, blood_type, quantity, safety_threshold) VALUES (?, ?, ?, ?)",
-                        (h_id, b_type, qty, 10.0)
-                    )
-
-            # 2. Seed 50 Donors
-            donor_ids = []
-            names = ["Nguyen", "Tran", "Le", "Pham", "Hoang", "Huynh", "Phan", "Vu", "Dang", "Bui"]
-            m_names = ["Van", "Thi", "Minh", "Hoang", "Duc", "Anh", "Ngoc", "Quang"]
-            l_names = ["An", "Binh", "Chinh", "Dung", "Em", "Giang", "Hung", "Kiet", "Linh", "Mai"]
-
-            for i in range(50):
-                email = f"donor{i+1}@example.com"
-                phone = f"091{(i+1):07d}"
-                cursor.execute("SELECT id FROM users WHERE phone = ?", (phone,))
-                if not cursor.fetchone():
-                    full_name = f"{random.choice(names)} {random.choice(m_names)} {random.choice(l_names)}"
-                    b_type = random.choice(blood_types)
-                    cursor.execute(
-                        "INSERT INTO users (phone, email, password, full_name, role, blood_type, humanitarian_points, reliability_score, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (phone, email, get_password_hash("password123"), full_name, "DONOR", b_type, random.randint(0, 1200), random.randint(80, 100), 10.70 + random.random()*0.15, 106.62 + random.random()*0.12)
-                    )
-                    donor_ids.append(cursor.lastrowid)
-
-            # 3. Seed 50 Appointments
-            cursor.execute("SELECT id FROM users WHERE role = 'DONOR'")
-            all_donors = [r["id"] for r in cursor.fetchall()]
-            cursor.execute("SELECT id FROM hospitals")
-            all_hospitals = [r["id"] for r in cursor.fetchall()]
-            
-            statuses = ['PENDING', 'APPROVED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
-            for i in range(50):
-                donor_id = random.choice(all_donors)
-                hosp_id = random.choice(all_hospitals)
-                status = random.choice(statuses)
-                days_diff = random.randint(-30, 30)
-                appt_date = (datetime.now() + timedelta(days=days_diff)).strftime("%Y-%m-%dT%H:%M")
-                
+            for phone, name, blood_type, reliability, points, total, last_days in sample_donors:
+                cursor.execute("SELECT id FROM users WHERE phone=?", (phone,))
+                if cursor.fetchone():
+                    continue
+                last_date = None
+                if last_days is not None:
+                    last_date = (datetime.utcnow() - timedelta(days=last_days)).isoformat()
                 cursor.execute(
-                    "INSERT INTO appointments (donor_id, hospital_id, appointment_date, status, notes, pre_screening_result) VALUES (?, ?, ?, ?, ?, ?)",
-                    (donor_id, hosp_id, appt_date, status, "Seeded test appointment", "Weight: 65kg, Healthy: True")
+                    """
+                    INSERT INTO users (phone, password, full_name, role, blood_type, reliability_score, humanitarian_points, total_donations, last_donation_date)
+                    VALUES (?, 'phone-login', ?, 'DONOR', ?, ?, ?, ?, ?)
+                    """,
+                    (phone, name, blood_type, reliability, points, total, last_date)
                 )
-            print("DEBUG: Extensive seeding complete.")
-        
+
+        # Seed a few transaction rows for forecast demo
+        cursor.execute("SELECT COUNT(*) AS c FROM inventory_transactions")
+        if cursor.fetchone()["c"] == 0:
+            for month_offset, qty in [(3, 4.5), (2, 7.0), (1, 6.0)]:
+                created_at = (datetime.utcnow() - timedelta(days=31 * month_offset)).strftime('%Y-%m-%d %H:%M:%S')
+                cursor.execute(
+                    "INSERT INTO inventory_transactions (hospital_id, blood_type, quantity, transaction_type, note, created_at) VALUES (1, 'O-', ?, 'OUT', 'Treatment usage seed', ?)",
+                    (qty, created_at)
+                )
+
         conn.commit()
         print("DEBUG: Database initialization successful.")
     except sqlite3.DatabaseError as e:
         if conn:
-            try:
-                conn.close()
-            except:
-                pass
+            try: conn.close()
+            except Exception: pass
             conn = None
-            
         if "malformed" in str(e).lower() and retry:
             print(f"WARNING: Database is malformed. Attempting to recreate... Error: {e}")
             if os.path.exists(DB_PATH):
                 try:
-                    # Try renaming first (often works better on Windows if there's a soft lock)
-                    bak_path = DB_PATH + f".bak.{int(time.time())}"
-                    os.rename(DB_PATH, bak_path)
-                    print(f"DEBUG: Malformed database renamed to {bak_path}")
-                except:
-                    try:
-                        os.remove(DB_PATH)
-                        print("DEBUG: Malformed database file removed.")
-                    except Exception as del_err:
-                        print(f"ERROR: Could not remove malformed database: {del_err}")
-                
-                # Also remove journal files if they exist
-                for suffix in ["-journal", "-wal", "-shm"]:
-                    journal_path = DB_PATH + suffix
-                    if os.path.exists(journal_path):
-                        try:
-                            os.remove(journal_path)
-                        except:
-                            pass
-            
-            # Check if file still exists before retrying
-            if os.path.exists(DB_PATH):
-                print("ERROR: Malformed database file still exists. Cannot recover automatically.")
-                return
-                
+                    os.rename(DB_PATH, DB_PATH + f".bak.{int(time.time())}")
+                except Exception:
+                    try: os.remove(DB_PATH)
+                    except Exception as del_err: print(f"ERROR: Could not remove malformed database: {del_err}")
             return init_db(retry=False)
-        else:
-            print(f"ERROR: Database initialization failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
+        print(f"ERROR: Database initialization failed: {str(e)}")
     except Exception as e:
         print(f"ERROR: Database initialization failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
     finally:
         if conn:
-            try:
-                conn.close()
-            except:
-                pass
-
-
-
+            try: conn.close()
+            except Exception: pass

@@ -16,11 +16,9 @@ class AppointmentStatus(str, Enum):
 
 class UserBase(BaseModel):
     phone: str
-    full_name: str
+    full_name: str = "New Donor"
     role: UserRole = UserRole.DONOR
     blood_type: Optional[str] = "UNKNOWN"
-    lat: Optional[float] = None
-    lng: Optional[float] = None
 
 class UserCreate(UserBase):
     password: Optional[str] = None
@@ -29,25 +27,16 @@ class UserCreate(UserBase):
 class UserLogin(BaseModel):
     phone: str
 
-class OTPRequest(BaseModel):
-    phone: str
-
-class OTPVerify(BaseModel):
-    phone: str
-    otp: str
-
 class Token(BaseModel):
     token: str
     user: dict
 
 class BloodInventoryBase(BaseModel):
-    hospital_id: int
     blood_type: str
     quantity: float
     safety_threshold: float
 
 class AppointmentBase(BaseModel):
-    hospital_id: int
     appointment_date: str
     notes: Optional[str] = None
     pre_screening_result: Optional[str] = None
@@ -56,7 +45,6 @@ class AppointmentCreate(AppointmentBase):
     pass
 
 class InventoryTransactionCreate(BaseModel):
-    hospital_id: int
     blood_type: str
     quantity: float
     transaction_type: str
@@ -69,15 +57,11 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     blood_type: Optional[str] = None
-    lat: Optional[float] = None
-    lng: Optional[float] = None
 
 class RecommendationRequest(BaseModel):
-    hospital_id: int
     blood_type: str
-    radius_km: float = 10
     top_n: int = 10
-    w_blood: float = 0.4
-    w_distance: float = 0.25
-    w_eligibility: float = 0.2
-    w_reliability: float = 0.15
+    w_blood: float = 0.45
+    w_eligibility: float = 0.25
+    w_reliability: float = 0.2
+    w_humanitarian: float = 0.1
