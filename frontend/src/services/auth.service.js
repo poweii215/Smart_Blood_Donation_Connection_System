@@ -1,20 +1,13 @@
 import api from './api';
 
 export const authService = {
-  requestOtp: async (phone) => {
-    const response = await api.post('/auth/request-otp', { phone });
-    return response.data;
-  },
-  verifyOtp: async ({ phone, otp }) => {
-    const response = await api.post('/auth/verify-otp', { phone, otp });
+  login: async ({ phone }) => {
+    const response = await api.post('/auth/login', { phone });
     if (response.data.token) {
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
     }
     return response.data;
-  },
-  login: async (credentials) => {
-    return authService.verifyOtp(credentials);
   },
   register: async (userData) => {
     const response = await api.post('/auth/register', userData);
@@ -30,6 +23,17 @@ export const authService = {
   },
   updateProfile: async (profileData) => {
     const response = await api.patch('/auth/profile', profileData);
+    if (response.data.user) {
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+    }
+    return response.data;
+  },
+  uploadAvatar: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/auth/profile/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     if (response.data.user) {
       localStorage.setItem('user', JSON.stringify(response.data.user));
     }
