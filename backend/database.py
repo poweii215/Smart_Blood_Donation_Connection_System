@@ -1,12 +1,20 @@
 import sqlite3
 import os
 import time
+import bcrypt
 from datetime import datetime, timedelta
 
 DB_PATH = os.path.join(os.getcwd(), "database.sqlite")
 DEFAULT_HOSPITAL_ID = 1
 
 BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+
+
+def _password_hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def _is_bcrypt_hash(value: str) -> bool:
+    return isinstance(value, str) and value.startswith(('$2a$', '$2b$', '$2y$'))
 
 
 def get_db_connection():
@@ -136,6 +144,17 @@ def init_db(retry=True):
                 emergency_auto_adjust INTEGER DEFAULT 1,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                sender TEXT NOT NULL CHECK(sender IN ('USER', 'BOT')),
+                message TEXT NOT NULL,
+                intent TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
         """)
 
         # Lightweight migrations for older DB files
@@ -193,11 +212,18 @@ def init_db(retry=True):
         """)
 
         # Seed demo users
-        cursor.execute("SELECT id FROM users WHERE phone = '0900000001'")
-        if not cursor.fetchone():
+        hospital_password_hash = _password_hash('Admin@123')
+        cursor.execute("SELECT id, password FROM users WHERE phone = '0900000001'")
+        hospital_row = cursor.fetchone()
+        if not hospital_row:
             cursor.execute(
                 "INSERT INTO users (phone, email, password, full_name, role, blood_type, reliability_score, humanitarian_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                ('0900000001', 'hospital@sbdcs.com', 'phone-login', 'Hospital Admin', 'HOSPITAL_ADMIN', 'UNKNOWN', 100, 0)
+                ('0900000001', 'hospital@sbdcs.com', hospital_password_hash, 'Hospital Admin', 'HOSPITAL_ADMIN', 'UNKNOWN', 100, 0)
+            )
+        elif not _is_bcrypt_hash(hospital_row['password']):
+            cursor.execute(
+                "UPDATE users SET email=?, password=?, role='HOSPITAL_ADMIN', full_name='Hospital Admin' WHERE phone='0900000001'",
+                ('hospital@sbdcs.com', hospital_password_hash)
             )
 
         cursor.execute("SELECT id FROM users WHERE phone = '0900000002'")

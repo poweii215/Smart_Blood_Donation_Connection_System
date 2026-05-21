@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 import os
 
 from .database import init_db
-from .routers import auth, bloodbank, appointments, hospitals, analytics
+from .routers import auth, bloodbank, appointments, hospitals, analytics, chatbot
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -37,12 +37,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Static upload files
+os.makedirs("uploads/avatars", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 # API Routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(bloodbank.router, prefix="/api/blood-bank", tags=["Blood Bank"])
 app.include_router(appointments.router, prefix="/api/appointments", tags=["Appointments"])
 app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(chatbot.router, prefix="/api/chatbot", tags=["Smart Assistant"])
 
 # Health check
 @app.get("/api/health")

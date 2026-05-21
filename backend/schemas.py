@@ -25,7 +25,10 @@ class UserCreate(UserBase):
     email: Optional[str] = None
 
 class UserLogin(BaseModel):
-    phone: str
+    phone: Optional[str] = None
+    identifier: Optional[str] = None
+    password: Optional[str] = None
+    login_type: Optional[str] = "DONOR"
 
 class Token(BaseModel):
     token: str
