@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Droplets, Calendar, LayoutDashboard, LogOut, User, Target, FileSpreadsheet, Settings, Bell, ChevronDown } from 'lucide-react';
+import { Droplets, Calendar, LayoutDashboard, LogOut, User, Target, FileSpreadsheet, Settings, Bell, ChevronDown, Bot } from 'lucide-react';
 import { authService } from '../services/auth.service';
 
 export default function Layout({ children }) {
@@ -21,13 +21,14 @@ export default function Layout({ children }) {
     { name: 'Blood Inventory', path: '/inventory', icon: Droplets, roles: ['HOSPITAL_ADMIN'] },
     { name: 'Recommendation', path: '/recommendation', icon: Target, roles: ['HOSPITAL_ADMIN'] },
     { name: 'Reports', path: '/reports', icon: FileSpreadsheet, roles: ['HOSPITAL_ADMIN'] },
+    { name: 'Smart Assistant', path: '/assistant', icon: Bot, roles: ['DONOR'] },
     { name: 'Settings', path: '/settings', icon: Settings, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex font-sans text-slate-900">
-      <aside className="hidden md:flex w-[280px] shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div className="px-6 py-8">
+    <div className="h-screen overflow-hidden bg-[#f8fafc] font-sans text-slate-900">
+      <aside className="fixed inset-y-0 left-0 z-50 hidden h-screen w-[280px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white md:flex">
+        <div className="shrink-0 px-6 py-6">
           <div className="flex items-center gap-4">
             <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-100">
               <Droplets className="h-8 w-8 text-white" />
@@ -39,9 +40,9 @@ export default function Layout({ children }) {
           </div>
         </div>
 
-        <div className="mx-6 border-t border-slate-100" />
+        <div className="mx-6 shrink-0 border-t border-slate-100" />
 
-        <nav className="flex-1 px-5 py-5 space-y-2">
+        <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-5 pr-3">
           {navItems.filter(item => item.roles.includes(user?.role)).map((item) => {
             const active = location.pathname === item.path;
             return (
@@ -61,7 +62,7 @@ export default function Layout({ children }) {
           })}
         </nav>
 
-        <div className="px-6 pb-6">
+        <div className="shrink-0 bg-white px-6 pb-5 pt-3">
           <div className="border-t border-slate-100 pt-5">
             <button onClick={handleLogout} className="flex w-full items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold text-red-600 transition hover:bg-red-50">
               <LogOut className="h-5 w-5" />
@@ -71,7 +72,7 @@ export default function Layout({ children }) {
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden md:ml-[280px]">
         <header className="sticky top-0 z-40 flex h-[76px] items-center justify-between border-b border-slate-200 bg-white/90 px-6 backdrop-blur lg:px-8">
           <div className="flex items-center gap-4">
             <button className="md:hidden rounded-xl border border-slate-200 p-2 text-slate-600">☰</button>

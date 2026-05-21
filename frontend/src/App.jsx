@@ -10,6 +10,7 @@ import Settings from './pages/Settings';
 import Congratulations from './pages/Congratulations';
 import Recommendation from './pages/Recommendation';
 import Reports from './pages/Reports';
+import SmartAssistant from './pages/SmartAssistant';
 import { authService } from './services/auth.service';
 
 function ProtectedRoute({ children, roles }) {
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/inventory" element={<ProtectedRoute roles={['HOSPITAL_ADMIN']}><Inventory /></ProtectedRoute>} />
           <Route path="/recommendation" element={<ProtectedRoute roles={['HOSPITAL_ADMIN']}><Recommendation /></ProtectedRoute>} />
           <Route path="/reports" element={<ProtectedRoute roles={['HOSPITAL_ADMIN']}><Reports /></ProtectedRoute>} />
+          <Route path="/assistant" element={<ProtectedRoute roles={['DONOR']}><SmartAssistant /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/congratulations" element={<ProtectedRoute roles={['DONOR']}><Congratulations /></ProtectedRoute>} />
           <Route path="/congratulations/:appointmentId" element={<ProtectedRoute roles={['DONOR']}><Congratulations /></ProtectedRoute>} />
