@@ -6,8 +6,10 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Appointments from './pages/Appointments';
 import Inventory from './pages/Inventory';
-import Profile from './pages/Profile';
+import Settings from './pages/Settings';
 import Congratulations from './pages/Congratulations';
+import Recommendation from './pages/Recommendation';
+import Reports from './pages/Reports';
 import { authService } from './services/auth.service';
 
 function ProtectedRoute({ children, roles }) {
@@ -27,7 +29,9 @@ export default function App() {
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute roles={['HOSPITAL_ADMIN']}><Inventory /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/recommendation" element={<ProtectedRoute roles={['HOSPITAL_ADMIN']}><Recommendation /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute roles={['HOSPITAL_ADMIN']}><Reports /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/congratulations" element={<ProtectedRoute roles={['DONOR']}><Congratulations /></ProtectedRoute>} />
           <Route path="/congratulations/:appointmentId" element={<ProtectedRoute roles={['DONOR']}><Congratulations /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" />} />

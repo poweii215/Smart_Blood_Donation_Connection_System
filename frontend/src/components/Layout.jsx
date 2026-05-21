@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Droplets, Calendar, LayoutDashboard, LogOut, User } from 'lucide-react';
+import { Droplets, Calendar, LayoutDashboard, LogOut, User, Target, FileSpreadsheet, Settings, Bell, ChevronDown } from 'lucide-react';
 import { authService } from '../services/auth.service';
 
 export default function Layout({ children }) {
@@ -16,44 +16,91 @@ export default function Layout({ children }) {
   if (!user && location.pathname !== '/login' && location.pathname !== '/register') return <>{children}</>;
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: ['HOSPITAL_ADMIN','DONOR'] },
-    { name: 'Appointments', path: '/appointments', icon: Calendar, roles: ['HOSPITAL_ADMIN','DONOR'] },
-    { name: 'Profile', path: '/profile', icon: User, roles: ['HOSPITAL_ADMIN','DONOR'] },
+    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
+    { name: 'Appointments', path: '/appointments', icon: Calendar, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
     { name: 'Blood Inventory', path: '/inventory', icon: Droplets, roles: ['HOSPITAL_ADMIN'] },
+    { name: 'Recommendation', path: '/recommendation', icon: Target, roles: ['HOSPITAL_ADMIN'] },
+    { name: 'Reports', path: '/reports', icon: FileSpreadsheet, roles: ['HOSPITAL_ADMIN'] },
+    { name: 'Settings', path: '/settings', icon: Settings, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
   ];
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5] flex flex-col font-sans">
-      <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center shadow-lg shadow-red-200"><Droplets className="text-white w-6 h-6" /></div>
-          <div className="flex flex-col">
-            <span className="font-bold text-xl tracking-tight text-gray-900 leading-none">SBDCs</span>
-            <span className="text-[10px] text-gray-500 font-medium hidden sm:block">Single Hospital Blood Donation System</span>
+    <div className="min-h-screen bg-[#f8fafc] flex font-sans text-slate-900">
+      <aside className="hidden md:flex w-[280px] shrink-0 flex-col border-r border-slate-200 bg-white">
+        <div className="px-6 py-8">
+          <div className="flex items-center gap-4">
+            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-100">
+              <Droplets className="h-8 w-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">SBDCs</h1>
+              <p className="text-sm leading-tight text-slate-500">Single Hospital<br />Blood Donation System</p>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full border border-gray-100">
-            <User className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">{user?.full_name}</span>
-            <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">{user?.role === 'HOSPITAL_ADMIN' ? 'HOSPITAL' : 'DONOR'}</span>
-          </div>
-          <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><LogOut className="w-5 h-5" /></button>
-        </div>
-      </header>
-      <div className="flex flex-1">
-        <aside className="w-64 bg-white border-r border-gray-200 p-4 hidden md:block">
-          <nav className="space-y-1">
-            {navItems.filter(item => item.roles.includes(user?.role)).map((item) => (
-              <Link key={item.path} to={item.path} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${location.pathname === item.path ? 'bg-red-50 text-red-600 shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
-                <item.icon className={`w-5 h-5 ${location.pathname === item.path ? 'text-red-600' : 'text-gray-400'}`} />
+
+        <div className="mx-6 border-t border-slate-100" />
+
+        <nav className="flex-1 px-5 py-5 space-y-2">
+          {navItems.filter(item => item.roles.includes(user?.role)).map((item) => {
+            const active = location.pathname === item.path;
+            return (
+              <Link
+                key={`${item.name}-${item.path}`}
+                to={item.path}
+                className={`group flex items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold transition-all ${
+                  active
+                    ? 'bg-red-50 text-red-600 shadow-sm shadow-red-100'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                }`}
+              >
+                <item.icon className={`h-5 w-5 ${active ? 'text-red-600' : 'text-slate-400 group-hover:text-slate-700'}`} />
                 {item.name}
               </Link>
-            ))}
-          </nav>
-        </aside>
-        <main className="flex-1 p-8 overflow-y-auto">{children}</main>
-      </div>
+            );
+          })}
+        </nav>
+
+        <div className="px-6 pb-6">
+          <div className="border-t border-slate-100 pt-5">
+            <button onClick={handleLogout} className="flex w-full items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold text-red-600 transition hover:bg-red-50">
+              <LogOut className="h-5 w-5" />
+              Logout
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-40 flex h-[76px] items-center justify-between border-b border-slate-200 bg-white/90 px-6 backdrop-blur lg:px-8">
+          <div className="flex items-center gap-4">
+            <button className="md:hidden rounded-xl border border-slate-200 p-2 text-slate-600">☰</button>
+            <div>
+              <h2 className="text-xl font-black text-slate-950">{user?.role === 'HOSPITAL_ADMIN' ? 'Hospital Dashboard' : 'Donor Dashboard'}</h2>
+              <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? 'Overview of today\'s operations' : 'Your donation journey'}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button className="relative rounded-2xl border border-slate-100 bg-white p-3 text-slate-500 shadow-sm hover:text-red-600">
+              <Bell className="h-5 w-5" />
+              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-black text-white">3</span>
+            </button>
+            <div className="hidden items-center gap-3 md:flex">
+              <div className="h-11 w-11 overflow-hidden rounded-2xl bg-slate-100 flex items-center justify-center">
+                {user?.avatar_url ? <img src={user.avatar_url} alt="avatar" className="h-full w-full object-cover" /> : <User className="h-6 w-6 text-slate-400" />}
+              </div>
+              <div className="leading-tight">
+                <p className="text-sm font-black text-slate-950">{user?.full_name || (user?.role === 'HOSPITAL_ADMIN' ? 'Hospital Admin' : 'Donor')}</p>
+                <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? 'Hospital' : 'Donor'}</p>
+              </div>
+              <ChevronDown className="h-4 w-4 text-slate-500" />
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto p-6 lg:p-8">{children}</main>
+      </section>
     </div>
   );
 }
