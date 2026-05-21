@@ -108,3 +108,34 @@ API endpoint:
 ```text
 GET /api/analytics/donors/export
 ```
+
+## Login update
+
+- Donor login: phone number only, no OTP/password. Demo donor: `0900000002`.
+- Hospital login: email or phone + encrypted password. Demo hospital:
+  - Email: `hospital@sbdcs.com`
+  - Phone: `0900000001`
+  - Password: `Admin@123`
+
+## Layout update
+
+The left sidebar is fixed. Only the main content area scrolls.
+
+## Smart Assistant for Donor
+
+Bản này bổ sung tab **Smart Assistant** cho Donor. Chatbot trả lời tự động dựa trên dữ liệu nội bộ, không gọi AI bên ngoài.
+
+Các câu hỏi hỗ trợ:
+- Lịch hẹn của tôi khi nào?
+- Tôi có đủ điều kiện hiến máu không?
+- Khi nào tôi được hiến lại?
+- Bệnh viện đang cần nhóm máu nào?
+- Điểm nhân đạo và huy hiệu của tôi?
+
+API mới:
+- `POST /api/chatbot/ask`
+- `GET /api/chatbot/history`
+- `GET /api/chatbot/suggestions`
+
+Database mới:
+- `chat_messages` để lưu lịch sử chat giữa Donor và bot.
