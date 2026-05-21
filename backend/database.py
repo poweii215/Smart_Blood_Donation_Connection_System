@@ -45,6 +45,7 @@ def init_db(retry=True):
                 full_name TEXT NOT NULL DEFAULT 'New Donor',
                 role TEXT NOT NULL CHECK(role IN ('DONOR', 'HOSPITAL_ADMIN')) DEFAULT 'DONOR',
                 blood_type TEXT DEFAULT 'UNKNOWN',
+                avatar_url TEXT,
                 lat REAL,
                 lng REAL,
                 reliability_score REAL DEFAULT 100,
@@ -121,6 +122,20 @@ def init_db(retry=True):
                 invitation_status TEXT DEFAULT 'SENT' CHECK(invitation_status IN ('SENT','ACCEPTED','DECLINED','NO_RESPONSE')),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS recommendation_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                w_blood REAL DEFAULT 0.45,
+                w_eligibility REAL DEFAULT 0.30,
+                w_reliability REAL DEFAULT 0.15,
+                w_humanitarian REAL DEFAULT 0.10,
+                emergency_w_blood REAL DEFAULT 0.60,
+                emergency_w_eligibility REAL DEFAULT 0.25,
+                emergency_w_reliability REAL DEFAULT 0.10,
+                emergency_w_humanitarian REAL DEFAULT 0.05,
+                emergency_auto_adjust INTEGER DEFAULT 1,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
         """)
 
         # Lightweight migrations for older DB files
@@ -132,6 +147,7 @@ def init_db(retry=True):
             'full_name': "ALTER TABLE users ADD COLUMN full_name TEXT DEFAULT 'New Donor'",
             'role': "ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'DONOR'",
             'blood_type': "ALTER TABLE users ADD COLUMN blood_type TEXT DEFAULT 'UNKNOWN'",
+            'avatar_url': "ALTER TABLE users ADD COLUMN avatar_url TEXT",
             'reliability_score': "ALTER TABLE users ADD COLUMN reliability_score REAL DEFAULT 100",
             'total_donations': "ALTER TABLE users ADD COLUMN total_donations INTEGER DEFAULT 0",
             'humanitarian_points': "ALTER TABLE users ADD COLUMN humanitarian_points INTEGER DEFAULT 0",
@@ -170,6 +186,11 @@ def init_db(retry=True):
         cursor.execute("UPDATE inventory_transactions SET hospital_id = 1 WHERE hospital_id IS NULL OR hospital_id <> 1")
 
         cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_unique ON users(phone)")
+
+        cursor.execute("""
+            INSERT OR IGNORE INTO recommendation_settings (id, w_blood, w_eligibility, w_reliability, w_humanitarian, emergency_w_blood, emergency_w_eligibility, emergency_w_reliability, emergency_w_humanitarian, emergency_auto_adjust)
+            VALUES (1, 0.45, 0.30, 0.15, 0.10, 0.60, 0.25, 0.10, 0.05, 1)
+        """)
 
         # Seed demo users
         cursor.execute("SELECT id FROM users WHERE phone = '0900000001'")

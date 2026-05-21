@@ -65,3 +65,17 @@ class RecommendationRequest(BaseModel):
     w_eligibility: float = 0.25
     w_reliability: float = 0.2
     w_humanitarian: float = 0.1
+
+
+class RecommendationWeights(BaseModel):
+    w_blood: float = 0.45
+    w_eligibility: float = 0.30
+    w_reliability: float = 0.15
+    w_humanitarian: float = 0.10
+
+class RecommendationSettings(RecommendationWeights):
+    emergency_w_blood: float = 0.60
+    emergency_w_eligibility: float = 0.25
+    emergency_w_reliability: float = 0.10
+    emergency_w_humanitarian: float = 0.05
+    emergency_auto_adjust: bool = True
