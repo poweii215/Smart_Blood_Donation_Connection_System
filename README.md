@@ -139,3 +139,17 @@ API mới:
 
 Database mới:
 - `chat_messages` để lưu lịch sử chat giữa Donor và bot.
+
+## Smart Assistant FAQ mở rộng
+
+Smart Assistant hiện hỗ trợ thêm các câu hỏi Donor thường thắc mắc:
+
+- Quy trình đăng ký hiến máu ra sao?
+- Tôi cần chuẩn bị gì trước khi hiến máu?
+- Khi đến hiến máu cần mang giấy tờ gì?
+- Sau khi hiến máu cần lưu ý gì?
+- Nếu chưa biết nhóm máu thì sao?
+- Các trạng thái lịch hẹn có ý nghĩa gì?
+- Thông tin bệnh viện ở đâu?
+
+Bot hoạt động theo hướng **Data-driven Rule-based Assistant**: một số câu trả lời lấy từ dữ liệu thật như lịch hẹn, kho máu, nhóm máu, điểm nhân đạo; một số câu trả lời là FAQ nghiệp vụ cố định để hỗ trợ Donor nhanh hơn.
