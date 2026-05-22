@@ -60,6 +60,43 @@ def get_latest_completed_date(cur, user_id, fallback=None):
 
 def intent_from_message(text: str) -> str:
     msg = normalize_text(text)
+
+    # Quy trình / hướng dẫn chung mà Donor thường hỏi
+    if any(k in msg for k in [
+        'quy trinh', 'dang ky ra sao', 'dang ki ra sao', 'cach dang ky', 'cach dat lich',
+        'cac buoc', 'bat dau nhu the nao', 'hien mau nhu the nao', 'huong dan dang ky',
+        'toi muon hien mau', 'lam sao de hien mau'
+    ]):
+        return 'registration_process'
+    if any(k in msg for k in [
+        'can chuan bi gi', 'truoc khi hien', 'an gi', 'uong gi', 'ngu du', 'chuan bi',
+        'nhin an', 'co duoc an sang', 'truoc ngay hien'
+    ]):
+        return 'preparation_guide'
+    if any(k in msg for k in [
+        'sau khi hien', 'sau hien mau', 'cham soc', 'nghi ngoi', 'an uong sau', 'luu y sau',
+        'bi met', 'chong mat'
+    ]):
+        return 'after_donation_care'
+    if any(k in msg for k in [
+        'mang gi', 'giay to', 'cccd', 'cmnd', 'can cuoc', 'ho so', 'di hien can gi'
+    ]):
+        return 'required_documents'
+    if any(k in msg for k in [
+        'khong biet nhom mau', 'chua biet nhom mau', 'unknown', 'chua xac dinh', 'xet nghiem nhom mau'
+    ]):
+        return 'unknown_blood_type'
+    if any(k in msg for k in [
+        'trang thai la gi', 'pending la gi', 'approved la gi', 'checked in', 'in progress',
+        'completed la gi', 'cac trang thai'
+    ]):
+        return 'status_explanation'
+    if any(k in msg for k in [
+        'gio lam viec', 'may gio', 'dia chi', 'o dau', 'lien he', 'thong tin benh vien', 'hospital info'
+    ]):
+        return 'hospital_info'
+
+    # Câu hỏi dựa trên dữ liệu cá nhân / dữ liệu hospital
     if any(k in msg for k in ['lich hen', 'dat lich', 'appointment', 'trang thai lich', 'hom nay toi co lich']):
         return 'appointment_status'
     if any(k in msg for k in ['khi nao', 'bao lau', 'hien lai', 'du dieu kien lai', 'countdown']):
@@ -73,6 +110,103 @@ def intent_from_message(text: str) -> str:
     return 'general_help'
 
 
+
+def answer_registration_process(cur, user):
+    cur.execute("""
+        SELECT id, appointment_date, status
+        FROM appointments
+        WHERE donor_id=? AND status NOT IN ('COMPLETED','CANCELLED')
+        ORDER BY appointment_date ASC
+        LIMIT 1
+    """, (user['id'],))
+    active = cur.fetchone()
+    extra = ""
+    if active:
+        extra = f"\n\nHiện bạn đã có lịch hẹn {fmt_dt(active['appointment_date'])}, trạng thái {active['status']}. Bạn có thể theo dõi trong mục Appointments."
+    return (
+        "Quy trình đăng ký hiến máu trên hệ thống gồm 5 bước:\n"
+        "1. Đăng nhập bằng số điện thoại.\n"
+        "2. Cập nhật thông tin cá nhân trong Settings, đặc biệt là họ tên và nhóm máu nếu đã biết.\n"
+        "3. Vào Appointments để chọn ngày giờ muốn hiến máu.\n"
+        "4. Trả lời sàng lọc sức khỏe cơ bản trước khi gửi lịch.\n"
+        "5. Chờ Hospital duyệt lịch. Khi đến bệnh viện, trạng thái sẽ lần lượt chuyển sang CHECKED_IN, IN_PROGRESS và COMPLETED."
+        + extra
+    )
+
+
+def answer_preparation_guide():
+    return (
+        "Trước khi hiến máu, bạn nên chuẩn bị như sau:\n"
+        "- Ngủ đủ giấc, hạn chế thức khuya.\n"
+        "- Ăn nhẹ trước khi đến, không nên để bụng đói.\n"
+        "- Uống đủ nước.\n"
+        "- Tránh rượu bia trước ngày hiến.\n"
+        "- Nếu đang dùng thuốc, đang sốt, cảm, hoặc vừa điều trị bệnh, hãy khai báo trong phần sàng lọc.\n"
+        "- Mang giấy tờ tùy thân khi đến bệnh viện.\n\n"
+        "Lưu ý: hệ thống chỉ hỗ trợ sàng lọc sơ bộ; quyết định cuối cùng do nhân viên y tế xác nhận."
+    )
+
+
+def answer_after_donation_care(user):
+    points = user.get('humanitarian_points') or 0
+    return (
+        "Sau khi hiến máu, bạn nên:\n"
+        "- Nghỉ tại điểm hiến theo hướng dẫn của nhân viên y tế.\n"
+        "- Uống nước và ăn nhẹ.\n"
+        "- Tránh vận động mạnh trong ngày.\n"
+        "- Nếu chóng mặt, mệt hoặc khó chịu, báo ngay cho nhân viên y tế.\n"
+        "- Theo dõi thời gian đủ điều kiện hiến lại trong Dashboard.\n\n"
+        f"Hiện bạn đang có {points} điểm nhân đạo. Cảm ơn bạn vì nghĩa cử hiến máu cứu người."
+    )
+
+
+def answer_required_documents():
+    return (
+        "Khi đến hiến máu, bạn nên mang:\n"
+        "- CCCD/CMND hoặc giấy tờ tùy thân hợp lệ.\n"
+        "- Số điện thoại đã dùng để đăng nhập hệ thống.\n"
+        "- Thông tin nhóm máu nếu bạn đã biết.\n"
+        "- Thông tin thuốc đang dùng hoặc bệnh nền nếu có.\n\n"
+        "Nếu chưa biết nhóm máu, bạn vẫn có thể đăng ký và cập nhật là Chưa xác định."
+    )
+
+
+def answer_unknown_blood_type(user):
+    current = user.get('blood_type') or 'UNKNOWN'
+    if current != 'UNKNOWN':
+        return f"Hồ sơ của bạn hiện ghi nhận nhóm máu {current}. Nếu thông tin này sai, bạn có thể cập nhật lại trong Settings."
+    return (
+        "Nếu bạn chưa biết nhóm máu, hãy chọn 'Chưa xác định/UNKNOWN' trong hồ sơ. "
+        "Bạn vẫn có thể đặt lịch hiến máu. Khi đến bệnh viện, nhân viên y tế có thể kiểm tra và cập nhật nhóm máu chính xác cho bạn."
+    )
+
+
+def answer_status_explanation():
+    return (
+        "Ý nghĩa các trạng thái lịch hẹn:\n"
+        "- PENDING: bạn đã gửi lịch, đang chờ Hospital duyệt.\n"
+        "- APPROVED: lịch đã được Hospital chấp nhận.\n"
+        "- CHECKED_IN: bạn đã đến bệnh viện và được ghi nhận.\n"
+        "- IN_PROGRESS: đang trong quy trình hiến máu.\n"
+        "- COMPLETED: đã hoàn tất hiến máu.\n"
+        "- CANCELLED: lịch đã bị hủy.\n\n"
+        "Khi trạng thái COMPLETED, hệ thống sẽ cập nhật điểm nhân đạo, số lần hiến và màn hình Congratulations."
+    )
+
+
+def answer_hospital_info(cur):
+    cur.execute("SELECT name, address, contact_phone, contact_email FROM hospitals WHERE id=1")
+    row = cur.fetchone()
+    if not row:
+        return "Hiện hệ thống chưa có thông tin bệnh viện. Bạn có thể liên hệ trực tiếp Hospital Admin."
+    return (
+        f"Thông tin điểm tiếp nhận hiến máu:\n"
+        f"- Tên: {row['name']}\n"
+        f"- Địa chỉ: {row['address']}\n"
+        f"- Điện thoại: {row['contact_phone'] or 'chưa cập nhật'}\n"
+        f"- Email: {row['contact_email'] or 'chưa cập nhật'}\n\n"
+        "Bạn có thể đặt lịch trong mục Appointments và theo dõi trạng thái trên hệ thống."
+    )
 def answer_appointment(cur, user_id):
     cur.execute("""
         SELECT * FROM appointments
@@ -202,9 +336,10 @@ def answer_stats(user):
 
 def answer_general():
     return (
-        "Mình có thể hỗ trợ bạn dựa trên dữ liệu của bệnh viện. Bạn có thể hỏi: "
-        "'Lịch hẹn của tôi khi nào?', 'Tôi có đủ điều kiện hiến không?', "
-        "'Khi nào tôi được hiến lại?', hoặc 'Bệnh viện đang cần nhóm máu nào?'."
+        "Mình có thể hỗ trợ bạn về quy trình hiến máu và dữ liệu cá nhân trong hệ thống. Bạn có thể hỏi: "
+        "'Quy trình đăng ký hiến máu ra sao?', 'Lịch hẹn của tôi khi nào?', "
+        "'Tôi cần chuẩn bị gì trước khi hiến?', 'Khi nào tôi được hiến lại?', "
+        "'Bệnh viện đang cần nhóm máu nào?', hoặc 'Sau khi hiến máu cần lưu ý gì?'."
     )
 
 
@@ -226,7 +361,21 @@ async def ask_chatbot(data: ChatbotAsk, current_user: dict = Depends(get_current
         user = dict(user_row)
 
         intent = intent_from_message(message)
-        if intent == 'appointment_status':
+        if intent == 'registration_process':
+            answer = answer_registration_process(cur, user)
+        elif intent == 'preparation_guide':
+            answer = answer_preparation_guide()
+        elif intent == 'after_donation_care':
+            answer = answer_after_donation_care(user)
+        elif intent == 'required_documents':
+            answer = answer_required_documents()
+        elif intent == 'unknown_blood_type':
+            answer = answer_unknown_blood_type(user)
+        elif intent == 'status_explanation':
+            answer = answer_status_explanation()
+        elif intent == 'hospital_info':
+            answer = answer_hospital_info(cur)
+        elif intent == 'appointment_status':
             answer = answer_appointment(cur, user['id'])
         elif intent == 'next_donation_date':
             answer = answer_next_donation(cur, user)
@@ -278,9 +427,16 @@ async def suggestions(current_user: dict = Depends(get_current_user)):
     if current_user['role'] != 'DONOR':
         raise HTTPException(status_code=403, detail='Smart Assistant hiện dành cho Donor')
     return [
+        'Quy trình đăng ký hiến máu ra sao?',
+        'Tôi cần chuẩn bị gì trước khi hiến máu?',
+        'Khi đến hiến máu cần mang giấy tờ gì?',
         'Lịch hẹn của tôi khi nào?',
         'Tôi có đủ điều kiện hiến máu không?',
         'Khi nào tôi được hiến lại?',
         'Bệnh viện đang cần nhóm máu nào?',
+        'Sau khi hiến máu cần lưu ý gì?',
+        'Nếu chưa biết nhóm máu thì sao?',
+        'Các trạng thái lịch hẹn có ý nghĩa gì?',
+        'Thông tin bệnh viện ở đâu?',
         'Điểm nhân đạo và huy hiệu của tôi?'
     ]
