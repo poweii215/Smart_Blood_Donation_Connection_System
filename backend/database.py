@@ -146,6 +146,16 @@ def init_db(retry=True):
             );
 
 
+            CREATE TABLE IF NOT EXISTS homepage_media (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                hospital_image_url TEXT DEFAULT '/images/hospital-showcase.svg',
+                donor_activity_image_url TEXT DEFAULT '/images/donor-activity.svg',
+                hospital_title TEXT DEFAULT 'Central Blood Hospital',
+                hospital_subtitle TEXT DEFAULT 'Luôn sẵn sàng tiếp nhận người hiến máu',
+                updated_by INTEGER,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS chat_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -209,6 +219,11 @@ def init_db(retry=True):
         cursor.execute("""
             INSERT OR IGNORE INTO recommendation_settings (id, w_blood, w_eligibility, w_reliability, w_humanitarian, emergency_w_blood, emergency_w_eligibility, emergency_w_reliability, emergency_w_humanitarian, emergency_auto_adjust)
             VALUES (1, 0.45, 0.30, 0.15, 0.10, 0.60, 0.25, 0.10, 0.05, 1)
+        """)
+
+        cursor.execute("""
+            INSERT OR IGNORE INTO homepage_media (id, hospital_image_url, donor_activity_image_url, hospital_title, hospital_subtitle)
+            VALUES (1, '/images/hospital-showcase.svg', '/images/donor-activity.svg', 'Central Blood Hospital', 'Luôn sẵn sàng tiếp nhận người hiến máu')
         """)
 
         # Seed demo users

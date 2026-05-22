@@ -212,3 +212,84 @@ async def update_profile(data: UserUpdate, current_user: dict = Depends(get_curr
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
+
+
+def _require_hospital_admin(current_user: dict):
+    if current_user.get("role") != "HOSPITAL_ADMIN":
+        raise HTTPException(status_code=403, detail="Chỉ Hospital Admin được thay đổi ảnh trang chủ")
+
+
+@router.get("/homepage-media")
+async def get_homepage_media():
+    """Public homepage media used by the landing page."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM homepage_media WHERE id = 1")
+        row = cursor.fetchone()
+        if not row:
+            return {
+                "hospital_image_url": "/images/hospital-showcase.svg",
+                "donor_activity_image_url": "/images/donor-activity.svg",
+                "hospital_title": "Central Blood Hospital",
+                "hospital_subtitle": "Luôn sẵn sàng tiếp nhận người hiến máu",
+            }
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@router.post("/homepage-media/{media_type}")
+async def upload_homepage_media(media_type: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """Hospital Admin uploads public homepage images.
+
+    media_type:
+    - hospital: hospital showcase image on landing page
+    - activity: people donating/activity image on landing page
+    """
+    _require_hospital_admin(current_user)
+    if media_type not in {"hospital", "activity"}:
+        raise HTTPException(status_code=400, detail="media_type phải là hospital hoặc activity")
+
+    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Chỉ hỗ trợ ảnh JPG, PNG, WEBP hoặc GIF")
+
+    original_name = file.filename or "homepage"
+    suffix = Path(original_name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        suffix = ".jpg"
+
+    content = await file.read()
+    max_size = 5 * 1024 * 1024
+    if len(content) > max_size:
+        raise HTTPException(status_code=400, detail="Ảnh trang chủ không được vượt quá 5MB")
+
+    uploads_dir = Path(os.getcwd()) / "uploads" / "homepage"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{media_type}_{uuid.uuid4().hex[:12]}{suffix}"
+    destination = uploads_dir / safe_name
+    destination.write_bytes(content)
+
+    media_url = f"/uploads/homepage/{safe_name}"
+    column = "hospital_image_url" if media_type == "hospital" else "donor_activity_image_url"
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT OR IGNORE INTO homepage_media (id, hospital_image_url, donor_activity_image_url, hospital_title, hospital_subtitle)
+            VALUES (1, '/images/hospital-showcase.svg', '/images/donor-activity.svg', 'Central Blood Hospital', 'Luôn sẵn sàng tiếp nhận người hiến máu')
+        """)
+        cursor.execute(
+            f"UPDATE homepage_media SET {column} = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+            (media_url, current_user["id"])
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM homepage_media WHERE id = 1")
+        return {"message": "Homepage media updated", "media_url": media_url, "homepage_media": dict(cursor.fetchone())}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()

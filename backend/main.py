@@ -39,6 +39,7 @@ app.add_middleware(
 
 # Static upload files
 os.makedirs("uploads/avatars", exist_ok=True)
+os.makedirs("uploads/homepage", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # API Routers
