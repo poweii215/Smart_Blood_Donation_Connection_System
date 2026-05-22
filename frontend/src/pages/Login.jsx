@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Droplets,
@@ -8,13 +8,13 @@ import {
   ShieldCheck,
   Mail,
   Lock,
-  HeartPulse,
-  CalendarCheck,
+  Hospital,
   Users,
+  CalendarCheck,
   Sparkles,
   Activity,
-  CheckCircle2,
-  AlertTriangle,
+  HeartPulse,
+  ChevronRight,
 } from 'lucide-react';
 import { authService } from '../services/auth.service';
 
@@ -25,20 +25,30 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [homepageMedia, setHomepageMedia] = useState({
+    hospital_image_url: '/images/hospital-showcase.svg',
+    donor_activity_image_url: '/images/donor-activity.svg',
+    hospital_title: 'Central Blood Hospital',
+    hospital_subtitle: 'Luôn sẵn sàng tiếp nhận người hiến máu',
+  });
   const navigate = useNavigate();
 
-  const stats = useMemo(() => [
-    { label: 'Active donors', value: '120+', icon: Users },
-    { label: 'Successful donations', value: '420+', icon: Droplets },
-    { label: 'Lives supported', value: '1,200+', icon: HeartPulse },
-  ], []);
+  useEffect(() => {
+    let mounted = true;
+    authService.getHomepageMedia()
+      .then((data) => { if (mounted && data) setHomepageMedia((prev) => ({ ...prev, ...data })); })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
-  const processSteps = [
-    { title: 'Đăng nhập nhanh', desc: 'Donor chỉ cần số điện thoại để bắt đầu.', icon: Phone },
-    { title: 'Khai báo sức khỏe', desc: 'Trả lời sàng lọc cơ bản trước khi đặt lịch.', icon: Activity },
-    { title: 'Đặt lịch hiến', desc: 'Chọn thời gian phù hợp và theo dõi trạng thái.', icon: CalendarCheck },
-    { title: 'Lan tỏa hy vọng', desc: 'Nhận điểm nhân đạo và thông điệp cảm ơn.', icon: HeartHandshake },
-  ];
+  const heroStats = useMemo(
+    () => [
+      { label: 'Lượt hiến thành công', value: '420+', icon: Droplets },
+      { label: 'Người hiến đang hoạt động', value: '120+', icon: Users },
+      { label: 'Lịch hẹn hôm nay', value: '24', icon: CalendarCheck },
+    ],
+    []
+  );
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -59,100 +69,168 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-rose-50 text-slate-950">
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-red-700 shadow-xl shadow-red-200">
-            <Droplets className="h-8 w-8 text-white" />
+    <div className="public-login-page min-h-screen bg-gradient-to-br from-white via-red-50/40 to-slate-100 font-sans text-slate-950">
+      <header className="public-login-header mx-auto flex max-w-7xl items-center justify-between px-5 py-5 lg:px-8">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-red-700 shadow-lg shadow-red-200">
+            <Droplets className="h-7 w-7 text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-black tracking-tight">SBDCs</h1>
-            <p className="text-sm leading-tight text-slate-500">Single Hospital Blood Donation System</p>
+            <p className="text-xs font-semibold text-slate-500">Single Hospital Blood Donation System</p>
           </div>
         </div>
         <div className="hidden items-center gap-3 md:flex">
-          <a href="#process" className="rounded-full px-4 py-2 text-sm font-bold text-slate-600 hover:bg-white hover:text-red-600">Quy trình</a>
-          <a href="#impact" className="rounded-full px-4 py-2 text-sm font-bold text-slate-600 hover:bg-white hover:text-red-600">Ý nghĩa</a>
-          <button onClick={() => setMode('HOSPITAL_ADMIN')} className="rounded-full border border-red-100 bg-white px-5 py-2.5 text-sm font-black text-red-600 shadow-sm hover:bg-red-50">
-            Hospital Login
-          </button>
+          <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-600 shadow-sm ring-1 ring-slate-200">
+            Central Blood Hospital
+          </span>
+          <a href="#login" className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-red-200 transition hover:bg-red-700">
+            Đăng nhập
+          </a>
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-10 px-6 pb-14 pt-4 lg:grid-cols-[1.15fr_0.85fr] lg:px-8 lg:pt-10">
-        <section className="flex flex-col justify-center">
-          <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-red-100 bg-white px-4 py-2 text-sm font-bold text-red-600 shadow-sm">
-            <Sparkles className="h-4 w-4" />
-            Giảm thủ tục, tăng cơ hội cứu người
+      <main className="mx-auto grid max-w-7xl gap-8 px-5 pb-10 pt-4 lg:grid-cols-[1.18fr_0.82fr] lg:px-8 lg:pb-16">
+        <section className="space-y-7">
+          <div className="public-hero-card rounded-[2rem] border border-red-100 bg-white/75 p-6 shadow-xl shadow-red-100/40 backdrop-blur lg:p-8">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-red-50 px-4 py-2 text-sm font-black text-red-600 ring-1 ring-red-100">
+              <HeartHandshake className="h-4 w-4" />
+              Mỗi lần hiến máu là một cơ hội cứu người
+            </div>
+            <div className="grid gap-7 lg:grid-cols-[1fr_0.85fr] lg:items-center">
+              <div>
+                <h2 className="public-hero-title max-w-2xl text-4xl font-black leading-tight tracking-tight text-slate-950 md:text-5xl">
+                  Một giọt máu cho đi,
+                  <span className="public-hero-accent block text-red-600">một cuộc đời ở lại.</span>
+                </h2>
+                <p className="public-hero-copy mt-5 max-w-xl text-lg leading-8 text-slate-600">
+                  SBDCs giúp bệnh viện quản lý hiến máu thông minh hơn và giúp người hiến máu đăng ký nhanh hơn, nhẹ nhàng hơn, đúng tinh thần nhân đạo.
+                </p>
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <a href="#login" className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-6 py-4 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-red-700">
+                    Tôi muốn hiến máu <ArrowRight className="h-5 w-5" />
+                  </a>
+                  <a href="#process" className="inline-flex items-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50">
+                    Xem quy trình <ChevronRight className="h-5 w-5" />
+                  </a>
+                </div>
+              </div>
+              <div className="public-hospital-image relative overflow-hidden rounded-[1.8rem] bg-red-50 shadow-lg shadow-red-100">
+                <img src={homepageMedia.hospital_image_url || "/images/hospital-showcase.svg"} alt="Hospital blood donation center" className="h-full w-full object-cover" />
+                <div className="public-hospital-card absolute bottom-4 left-4 right-4 rounded-2xl bg-white/90 p-4 shadow-lg backdrop-blur">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white">
+                      <Hospital className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-950">{homepageMedia.hospital_title || 'Central Blood Hospital'}</p>
+                      <p className="text-sm font-medium text-slate-500">{homepageMedia.hospital_subtitle || 'Luôn sẵn sàng tiếp nhận người hiến máu'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <h2 className="max-w-3xl text-5xl font-black leading-tight tracking-tight text-slate-950 md:text-6xl">
-            Một giọt máu cho đi,
-            <span className="block text-red-600">một cuộc đời ở lại.</span>
-          </h2>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            SBDCs giúp người hiến máu đăng nhập nhanh, đặt lịch dễ dàng và theo dõi hành trình nhân đạo của mình. Mỗi lần hiến máu là một cơ hội mang lại hy vọng cho người cần được cứu chữa.
-          </p>
-
-          <div id="impact" className="mt-8 grid gap-4 sm:grid-cols-3">
-            {stats.map((item) => (
-              <div key={item.label} className="rounded-3xl border border-slate-100 bg-white/90 p-5 shadow-sm">
-                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
-                  <item.icon className="h-5 w-5" />
+          <div className="grid gap-4 md:grid-cols-3">
+            {heroStats.map((stat) => (
+              <div key={stat.label} className="public-stat-card rounded-3xl border border-slate-100 bg-white p-5 shadow-lg shadow-slate-200/60">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                  <stat.icon className="h-6 w-6" />
                 </div>
-                <p className="text-2xl font-black">{item.value}</p>
-                <p className="text-sm font-semibold text-slate-500">{item.label}</p>
+                <p className="text-3xl font-black text-slate-950">{stat.value}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-500">{stat.label}</p>
               </div>
             ))}
           </div>
 
-          <div className="mt-8 rounded-3xl border border-red-100 bg-red-600 p-6 text-white shadow-xl shadow-red-100">
-            <div className="flex items-start gap-4">
-              <div className="rounded-2xl bg-white/15 p-3">
-                <AlertTriangle className="h-7 w-7" />
+          <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-[2rem] border border-red-100 bg-gradient-to-br from-red-600 to-red-700 p-6 text-white shadow-xl shadow-red-200">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
+                <Activity className="h-7 w-7" />
               </div>
-              <div>
-                <h3 className="text-xl font-black">Emergency Blood Support</h3>
-                <p className="mt-2 text-sm leading-6 text-red-50">
-                  Khi kho máu xuống thấp, hệ thống sẽ kích hoạt Emergency Mode để ưu tiên huy động những donor phù hợp nhất theo nhóm máu, điều kiện sức khỏe và độ tin cậy.
-                </p>
+              <h3 className="text-2xl font-black">Emergency Blood Need</h3>
+              <p className="mt-3 leading-7 text-red-50">
+                Khi kho máu xuống thấp, hệ thống sẽ kích hoạt Emergency Mode để ưu tiên nhóm máu cần thiết và gợi ý người hiến phù hợp nhất.
+              </p>
+              <div className="mt-5 rounded-2xl bg-white/12 p-4 text-sm font-bold">
+                Hôm nay bệnh viện đang ưu tiên: <span className="text-white">O- và A-</span>
               </div>
+            </div>
+
+            <div className="public-info-card rounded-[2rem] border border-slate-100 bg-white p-6 shadow-xl shadow-slate-200/60">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">
+                    <HeartPulse className="h-4 w-4" />
+                    People Donating Today
+                  </div>
+                  <h3 className="mt-4 text-2xl font-black">Những người đang trao hy vọng hôm nay</h3>
+                  <p className="mt-2 text-slate-500">Mỗi người hiến máu là một phần của cộng đồng nhân ái.</p>
+                </div>
+                <div className="hidden h-16 w-16 items-center justify-center rounded-3xl bg-red-50 text-red-600 md:flex">
+                  <Sparkles className="h-8 w-8" />
+                </div>
+              </div>
+              <div className="mt-5 overflow-hidden rounded-3xl bg-slate-50">
+                <img src={homepageMedia.donor_activity_image_url || "/images/donor-activity.svg"} alt="People donating blood" className="h-56 w-full object-cover" />
+              </div>
+            </div>
+          </div>
+
+          <div id="process" className="public-info-card rounded-[2rem] border border-slate-100 bg-white p-6 shadow-xl shadow-slate-200/60">
+            <h3 className="text-2xl font-black">Quy trình hiến máu đơn giản</h3>
+            <div className="mt-6 grid gap-4 md:grid-cols-4">
+              {[
+                ['1', 'Đăng nhập', 'Nhập số điện thoại để bắt đầu nhanh.'],
+                ['2', 'Khai báo', 'Cập nhật sức khỏe và thông tin cơ bản.'],
+                ['3', 'Đặt lịch', 'Chọn khung giờ phù hợp để đến hiến.'],
+                ['4', 'Hiến máu', 'Hoàn tất và nhận lời cảm ơn từ hệ thống.'],
+              ].map(([step, title, desc]) => (
+                <div key={step} className="rounded-3xl bg-slate-50 p-5">
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-2xl bg-red-600 text-sm font-black text-white">{step}</div>
+                  <p className="font-black text-slate-950">{title}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">{desc}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>
 
-        <section className="lg:pl-4">
-          <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-2xl shadow-red-100/60 md:p-8">
-            <div className="mb-6 text-center">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-red-500 to-red-700 shadow-lg shadow-red-200">
-                <Droplets className="h-9 w-9 text-white" />
+        <section id="login" className="lg:sticky lg:top-6 lg:self-start">
+          <div className="public-login-card overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-2xl shadow-slate-300/50">
+            <div className="p-7 pb-0 text-center">
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-red-700 shadow-lg shadow-red-200">
+                <Droplets className="h-10 w-10 text-white" />
               </div>
-              <h3 className="text-3xl font-black tracking-tight">Bắt đầu hành trình hiến máu</h3>
+              <h2 className="text-3xl font-black tracking-tight">Đăng nhập SBDCs</h2>
               <p className="mt-2 text-slate-500">Donor đăng nhập nhanh. Hospital dùng tài khoản bảo mật.</p>
             </div>
 
-            <div className="mb-6 grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => { setMode('DONOR'); setError(''); }}
-                className={`rounded-xl py-3 text-sm font-black transition ${mode === 'DONOR' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-              >
-                Donor
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMode('HOSPITAL_ADMIN'); setError(''); }}
-                className={`rounded-xl py-3 text-sm font-black transition ${mode === 'HOSPITAL_ADMIN' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-              >
-                Hospital
-              </button>
+            <div className="px-7 pt-6">
+              <div className="public-login-tabs grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => { setMode('DONOR'); setError(''); }}
+                  className={`rounded-xl py-3 text-sm font-black transition ${mode === 'DONOR' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                >
+                  Donor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode('HOSPITAL_ADMIN'); setError(''); }}
+                  className={`rounded-xl py-3 text-sm font-black transition ${mode === 'HOSPITAL_ADMIN' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                >
+                  Hospital
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={handleLogin} className="space-y-5 p-7">
               {mode === 'DONOR' ? (
                 <div className="flex gap-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
                   <HeartHandshake className="h-5 w-5 shrink-0" />
-                  Donor chỉ cần số điện thoại để giảm rào cản và khuyến khích hành động hiến máu.
+                  Donor chỉ cần số điện thoại để giảm thủ tục và khuyến khích hành động hiến máu.
                 </div>
               ) : (
                 <div className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
@@ -161,7 +239,7 @@ export default function Login() {
                 </div>
               )}
 
-              {error && <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-600">{error}</div>}
+              {error && <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-600">{error}</div>}
 
               {mode === 'DONOR' ? (
                 <div className="space-y-2">
@@ -172,12 +250,12 @@ export default function Login() {
                       type="tel"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 font-semibold outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 transition-all focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
                       placeholder="0900000002"
                       required={mode === 'DONOR'}
                     />
                   </div>
-                  <p className="ml-1 text-xs text-slate-400">Demo Donor: 0900000002 · Số mới sẽ tự tạo tài khoản Donor.</p>
+                  <p className="ml-1 text-[11px] text-slate-400">Demo Donor: 0900000002 · Số mới sẽ tự tạo tài khoản Donor.</p>
                 </div>
               ) : (
                 <>
@@ -189,7 +267,7 @@ export default function Login() {
                         type="text"
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 font-semibold outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 transition-all focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
                         placeholder="hospital@sbdcs.com hoặc 0900000001"
                         required={mode === 'HOSPITAL_ADMIN'}
                       />
@@ -203,57 +281,26 @@ export default function Login() {
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 font-semibold outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 transition-all focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
                         placeholder="Admin@123"
                         required={mode === 'HOSPITAL_ADMIN'}
                       />
                     </div>
-                    <p className="ml-1 text-xs text-slate-400">Demo Hospital: hospital@sbdcs.com / Admin@123</p>
+                    <p className="ml-1 text-[11px] text-slate-400">Demo Hospital: hospital@sbdcs.com / Admin@123</p>
                   </div>
                 </>
               )}
 
-              <button type="submit" disabled={loading} className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 py-4 font-black text-white shadow-xl shadow-red-200 transition hover:bg-red-700 disabled:opacity-50">
-                {loading ? 'Đang đăng nhập...' : mode === 'DONOR' ? 'Become a Donor' : 'Đăng nhập Hospital'}
-                <ArrowRight className="h-5 w-5 transition group-hover:translate-x-1" />
+              <button type="submit" disabled={loading} className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 py-4 font-black text-white shadow-xl shadow-red-200 transition-all hover:bg-red-700 disabled:opacity-50">
+                {loading ? 'Đang đăng nhập...' : 'Đăng nhập'} <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
               </button>
             </form>
-
-            <div className="pt-6 text-center">
-              <p className="text-sm text-slate-500">Muốn nhập đầy đủ thông tin Donor? <Link to="/register" className="font-black text-red-600 hover:underline">Đăng ký hồ sơ</Link></p>
+            <div className="px-7 pb-7 text-center">
+              <p className="text-sm text-slate-500">Muốn nhập đầy đủ thông tin Donor? <Link to="/register" className="font-black text-red-600 underline-offset-4 hover:underline">Đăng ký hồ sơ</Link></p>
             </div>
           </div>
         </section>
       </main>
-
-      <section id="process" className="mx-auto max-w-7xl px-6 pb-16 lg:px-8">
-        <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm md:p-8">
-          <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-            <div>
-              <h3 className="text-3xl font-black tracking-tight">Quy trình hiến máu đơn giản</h3>
-              <p className="mt-2 text-slate-500">Từ đăng nhập đến hoàn tất, hệ thống luôn hướng người hiến đi qua từng bước rõ ràng.</p>
-            </div>
-            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700">
-              <CheckCircle2 className="h-4 w-4" />
-              Một lần hiến máu có thể cứu tới 3 người
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-4">
-            {processSteps.map((step, index) => (
-              <div key={step.title} className="relative rounded-3xl border border-slate-100 bg-slate-50 p-5">
-                <div className="mb-5 flex items-center justify-between">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-red-600 shadow-sm">
-                    <step.icon className="h-6 w-6" />
-                  </div>
-                  <span className="text-sm font-black text-slate-300">0{index + 1}</span>
-                </div>
-                <h4 className="font-black text-slate-950">{step.title}</h4>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{step.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

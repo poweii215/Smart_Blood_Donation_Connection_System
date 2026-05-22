@@ -28,6 +28,18 @@ export const authService = {
     }
     return response.data;
   },
+  getHomepageMedia: async () => {
+    const response = await api.get('/auth/homepage-media');
+    return response.data;
+  },
+  uploadHomepageMedia: async (mediaType, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(`/auth/homepage-media/${mediaType}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
   uploadAvatar: async (file) => {
     const formData = new FormData();
     formData.append('file', file);

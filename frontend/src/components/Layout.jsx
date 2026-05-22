@@ -1,29 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Droplets, Calendar, LayoutDashboard, LogOut, User, Target, FileSpreadsheet, Settings, Bell, ChevronDown, Bot } from 'lucide-react';
 import { authService } from '../services/auth.service';
+import { useI18n } from '../utils/userSettings';
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const user = authService.getCurrentUser();
+  const tr = useI18n(user);
+  const [, forceSettingsRefresh] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => forceSettingsRefresh(v => v + 1);
+    window.addEventListener('sbdcs-settings-changed', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('sbdcs-settings-changed', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
 
   const handleLogout = () => {
     authService.logout();
     navigate('/login');
   };
 
-  if (location.pathname === '/login' || location.pathname === '/register') return <>{children}</>;
-  if (!user) return <>{children}</>;
+  if (!user && location.pathname !== '/login' && location.pathname !== '/register') return <>{children}</>;
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
-    { name: 'Appointments', path: '/appointments', icon: Calendar, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
-    { name: 'Blood Inventory', path: '/inventory', icon: Droplets, roles: ['HOSPITAL_ADMIN'] },
-    { name: 'Recommendation', path: '/recommendation', icon: Target, roles: ['HOSPITAL_ADMIN'] },
-    { name: 'Reports', path: '/reports', icon: FileSpreadsheet, roles: ['HOSPITAL_ADMIN'] },
-    { name: 'Smart Assistant', path: '/assistant', icon: Bot, roles: ['DONOR'] },
-    { name: 'Settings', path: '/settings', icon: Settings, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
+    { labelKey: 'dashboard', path: '/', icon: LayoutDashboard, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
+    { labelKey: 'appointments', path: '/appointments', icon: Calendar, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
+    { labelKey: 'inventory', path: '/inventory', icon: Droplets, roles: ['HOSPITAL_ADMIN'] },
+    { labelKey: 'recommendation', path: '/recommendation', icon: Target, roles: ['HOSPITAL_ADMIN'] },
+    { labelKey: 'reports', path: '/reports', icon: FileSpreadsheet, roles: ['HOSPITAL_ADMIN'] },
+    { labelKey: 'assistant', path: '/assistant', icon: Bot, roles: ['DONOR'] },
+    { labelKey: 'settings', path: '/settings', icon: Settings, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
   ];
 
   return (
@@ -36,7 +48,7 @@ export default function Layout({ children }) {
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-950">SBDCs</h1>
-              <p className="text-sm leading-tight text-slate-500">Single Hospital<br />Blood Donation System</p>
+              <p className="text-sm leading-tight text-slate-500">{tr('appSubtitle')}</p>
             </div>
           </div>
         </div>
@@ -48,7 +60,7 @@ export default function Layout({ children }) {
             const active = location.pathname === item.path;
             return (
               <Link
-                key={`${item.name}-${item.path}`}
+                key={`${item.labelKey}-${item.path}`}
                 to={item.path}
                 className={`group flex items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold transition-all ${
                   active
@@ -57,7 +69,7 @@ export default function Layout({ children }) {
                 }`}
               >
                 <item.icon className={`h-5 w-5 ${active ? 'text-red-600' : 'text-slate-400 group-hover:text-slate-700'}`} />
-                {item.name}
+                {tr(item.labelKey)}
               </Link>
             );
           })}
@@ -67,7 +79,7 @@ export default function Layout({ children }) {
           <div className="border-t border-slate-100 pt-5">
             <button onClick={handleLogout} className="flex w-full items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold text-red-600 transition hover:bg-red-50">
               <LogOut className="h-5 w-5" />
-              Logout
+              {tr('logout')}
             </button>
           </div>
         </div>
@@ -78,8 +90,8 @@ export default function Layout({ children }) {
           <div className="flex items-center gap-4">
             <button className="md:hidden rounded-xl border border-slate-200 p-2 text-slate-600">☰</button>
             <div>
-              <h2 className="text-xl font-black text-slate-950">{user?.role === 'HOSPITAL_ADMIN' ? 'Hospital Dashboard' : 'Donor Dashboard'}</h2>
-              <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? 'Overview of today\'s operations' : 'Your donation journey'}</p>
+              <h2 className="text-xl font-black text-slate-950">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalDashboard') : tr('donorDashboard')}</h2>
+              <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalSubtitle') : tr('donorSubtitle')}</p>
             </div>
           </div>
 
@@ -93,8 +105,8 @@ export default function Layout({ children }) {
                 {user?.avatar_url ? <img src={user.avatar_url} alt="avatar" className="h-full w-full object-cover" /> : <User className="h-6 w-6 text-slate-400" />}
               </div>
               <div className="leading-tight">
-                <p className="text-sm font-black text-slate-950">{user?.full_name || (user?.role === 'HOSPITAL_ADMIN' ? 'Hospital Admin' : 'Donor')}</p>
-                <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? 'Hospital' : 'Donor'}</p>
+                <p className="text-sm font-black text-slate-950">{user?.full_name || (user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalAdmin') : tr('donor'))}</p>
+                <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospital') : tr('donor')}</p>
               </div>
               <ChevronDown className="h-4 w-4 text-slate-500" />
             </div>
