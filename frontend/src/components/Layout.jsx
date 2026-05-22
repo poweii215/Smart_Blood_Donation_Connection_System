@@ -13,7 +13,8 @@ export default function Layout({ children }) {
     navigate('/login');
   };
 
-  if (!user && location.pathname !== '/login' && location.pathname !== '/register') return <>{children}</>;
+  if (location.pathname === '/login' || location.pathname === '/register') return <>{children}</>;
+  if (!user) return <>{children}</>;
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard, roles: ['HOSPITAL_ADMIN', 'DONOR'] },

@@ -1,12 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Send, Sparkles, Calendar, HeartPulse, AlertTriangle, Award, Loader2 } from 'lucide-react';
+import { Bot, Send, Sparkles, Calendar, HeartPulse, AlertTriangle, Award, Loader2, ClipboardList, FileText, Utensils, HelpCircle } from 'lucide-react';
 import { chatbotService } from '../services/chatbot.service';
 
 const defaultSuggestions = [
+  { text: 'Quy trình đăng ký hiến máu ra sao?', icon: ClipboardList },
+  { text: 'Tôi cần chuẩn bị gì trước khi hiến máu?', icon: Utensils },
+  { text: 'Khi đến hiến máu cần mang giấy tờ gì?', icon: FileText },
   { text: 'Lịch hẹn của tôi khi nào?', icon: Calendar },
   { text: 'Tôi có đủ điều kiện hiến máu không?', icon: HeartPulse },
   { text: 'Khi nào tôi được hiến lại?', icon: Calendar },
   { text: 'Bệnh viện đang cần nhóm máu nào?', icon: AlertTriangle },
+  { text: 'Sau khi hiến máu cần lưu ý gì?', icon: HeartPulse },
+  { text: 'Nếu chưa biết nhóm máu thì sao?', icon: HelpCircle },
+  { text: 'Các trạng thái lịch hẹn có ý nghĩa gì?', icon: ClipboardList },
+  { text: 'Thông tin bệnh viện ở đâu?', icon: FileText },
   { text: 'Điểm nhân đạo và huy hiệu của tôi?', icon: Award },
 ];
 
@@ -15,7 +22,7 @@ export default function SmartAssistant() {
     {
       sender: 'BOT',
       message:
-        'Xin chào, mình là Smart Assistant của SBDCs. Mình có thể trả lời dựa trên dữ liệu thật của bệnh viện như lịch hẹn, điều kiện hiến, thời gian đủ điều kiện và tình trạng khẩn cấp kho máu.',
+        'Xin chào, mình là Smart Assistant của SBDCs. Mình có thể trả lời dựa trên dữ liệu thật của bệnh viện như quy trình đăng ký, chuẩn bị trước/sau khi hiến, lịch hẹn, điều kiện hiến, thời gian đủ điều kiện và tình trạng khẩn cấp kho máu.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -62,8 +69,11 @@ export default function SmartAssistant() {
 
   const suggestionIcon = (text) => {
     const lower = text.toLowerCase();
+    if (lower.includes('quy trình') || lower.includes('trạng thái')) return ClipboardList;
+    if (lower.includes('giấy tờ') || lower.includes('bệnh viện')) return FileText;
+    if (lower.includes('chuẩn bị') || lower.includes('ăn') || lower.includes('uống')) return Utensils;
     if (lower.includes('lịch') || lower.includes('khi nào')) return Calendar;
-    if (lower.includes('điều kiện')) return HeartPulse;
+    if (lower.includes('điều kiện') || lower.includes('sau khi hiến')) return HeartPulse;
     if (lower.includes('cần') || lower.includes('máu')) return AlertTriangle;
     if (lower.includes('điểm') || lower.includes('huy hiệu')) return Award;
     return Sparkles;
@@ -79,7 +89,7 @@ export default function SmartAssistant() {
           <div>
             <h1 className="text-3xl font-black tracking-tight">Smart Assistant</h1>
             <p className="mt-1 text-sm text-red-50">
-              Trợ lý tự động trả lời dựa trên lịch hẹn, kho máu, hồ sơ donor và dữ liệu Hospital.
+              Trợ lý tự động trả lời câu hỏi thường gặp và dữ liệu thật: quy trình đăng ký, lịch hẹn, điều kiện hiến, kho máu và hồ sơ donor.
             </p>
           </div>
         </div>
@@ -174,7 +184,7 @@ export default function SmartAssistant() {
           <div className="rounded-3xl border border-red-100 bg-red-50 p-5 text-sm text-red-800">
             <h3 className="mb-2 font-black">Smart ở đâu?</h3>
             <p className="leading-relaxed">
-              Bot nhận diện intent đơn giản, sau đó truy vấn dữ liệu thật như appointment, blood inventory, emergency mode,
+              Bot nhận diện intent đơn giản, kết hợp FAQ nghiệp vụ với dữ liệu thật như appointment, blood inventory, emergency mode,
               reliability score và last donation date để trả lời cho Donor.
             </p>
           </div>
