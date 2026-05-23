@@ -6,6 +6,7 @@ export const authService = {
     if (response.data.token) {
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      window.dispatchEvent(new Event('sbdcs-auth-changed'));
     }
     return response.data;
   },
@@ -16,6 +17,8 @@ export const authService = {
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    document.documentElement.classList.remove('dark');
+    window.dispatchEvent(new Event('sbdcs-auth-changed'));
   },
   getCurrentUser: () => {
     const user = localStorage.getItem('user');
@@ -25,6 +28,7 @@ export const authService = {
     const response = await api.patch('/auth/profile', profileData);
     if (response.data.user) {
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      window.dispatchEvent(new Event('sbdcs-auth-changed'));
     }
     return response.data;
   },
@@ -48,6 +52,7 @@ export const authService = {
     });
     if (response.data.user) {
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      window.dispatchEvent(new Event('sbdcs-auth-changed'));
     }
     return response.data;
   }

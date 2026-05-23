@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 
 /* Global dark mode support. The Settings page toggles the `.dark` class on <html>. */
@@ -393,3 +394,216 @@ html.dark .text-purple-600 { color: #c084fc !important; }
 html.dark .bg-blue-50 { background-color: rgba(30, 64, 175, 0.30) !important; }
 html.dark .bg-purple-50 { background-color: rgba(88, 28, 135, 0.30) !important; }
 html.dark .bg-indigo-50 { background-color: rgba(67, 56, 202, 0.30) !important; }
+
+
+/* 2026-05 audit: final contrast and theme synchronization fixes */
+html.dark .emergency-alert-card,
+html.dark .rounded-\[2rem\].border-red-100.bg-white,
+html.dark .rounded-\[2rem\].border-red-100.bg-white\/75 {
+  background: linear-gradient(135deg, rgba(69,10,10,.92), rgba(15,23,42,.96)) !important;
+  color: #f8fafc !important;
+  border-color: rgba(248,113,113,.55) !important;
+}
+html.dark .emergency-alert-card *,
+html.dark .dashboard-panel *,
+html.dark .dashboard-stat-card *,
+html.dark .public-info-card *,
+html.dark .public-hero-card * {
+  text-shadow: none;
+}
+html.dark .emergency-alert-card .text-white,
+html.dark .emergency-alert-card h1,
+html.dark .emergency-alert-card h2,
+html.dark .emergency-alert-card h3,
+html.dark .emergency-alert-card .font-black {
+  color: #ffffff !important;
+}
+html.dark .emergency-alert-card p,
+html.dark .emergency-alert-card .text-slate-500,
+html.dark .emergency-alert-card .text-slate-600,
+html.dark .emergency-alert-card .text-slate-700 {
+  color: #dbeafe !important;
+}
+html.dark .dashboard-panel,
+html.dark .dashboard-stat-card,
+html.dark .public-info-card,
+html.dark .public-login-card,
+html.dark .public-hospital-card {
+  background: #111827 !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+html.dark .dashboard-panel h1,
+html.dark .dashboard-panel h2,
+html.dark .dashboard-panel h3,
+html.dark .dashboard-stat-card h1,
+html.dark .dashboard-stat-card h2,
+html.dark .dashboard-stat-card h3,
+html.dark .public-info-card h1,
+html.dark .public-info-card h2,
+html.dark .public-info-card h3,
+html.dark .public-login-card h1,
+html.dark .public-login-card h2,
+html.dark .public-login-card h3,
+html.dark .public-hospital-card .font-black {
+  color: #f8fafc !important;
+}
+html.dark .dashboard-panel p,
+html.dark .dashboard-stat-card p,
+html.dark .public-info-card p,
+html.dark .public-login-card p,
+html.dark .public-hospital-card p,
+html.dark .text-slate-400,
+html.dark .text-slate-500,
+html.dark .text-slate-600,
+html.dark .text-gray-400,
+html.dark .text-gray-500,
+html.dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+html.dark .bg-white,
+html.dark .bg-slate-50,
+html.dark .bg-gray-50 {
+  background-color: #111827 !important;
+}
+html.dark .bg-slate-100,
+html.dark .bg-gray-100 {
+  background-color: #1e293b !important;
+}
+html.dark .text-white\/50,
+html.dark .text-white\/60,
+html.dark .text-white\/70,
+html.dark .text-red-50 {
+  color: #f8fafc !important;
+}
+html.dark .bg-emerald-50 {
+  background-color: rgba(6, 78, 59, .55) !important;
+}
+html.dark .text-emerald-700,
+html.dark .text-emerald-600 {
+  color: #6ee7b7 !important;
+}
+html.dark .bg-red-50 {
+  background-color: rgba(127, 29, 29, .42) !important;
+}
+html.dark .text-red-700,
+html.dark .text-red-600 {
+  color: #f87171 !important;
+}
+html.dark button:disabled {
+  background-color: #475569 !important;
+  color: #cbd5e1 !important;
+}
+
+
+/* 2026-05 final audit: role-scoped theme readability and deterministic dark variant. */
+html:not(.dark) body,
+html:not(.dark) #root {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+html.dark .bg-white\/75,
+html.dark .bg-white\/80,
+html.dark .bg-white\/85,
+html.dark .bg-white\/90,
+html.dark .bg-white\/95 {
+  background-color: rgba(17, 24, 39, 0.94) !important;
+  color: #f8fafc !important;
+}
+html.dark .border-white\/40,
+html.dark .border-white\/50,
+html.dark .border-white\/60,
+html.dark .border-red-100,
+html.dark .border-gray-100,
+html.dark .border-slate-100 {
+  border-color: #334155 !important;
+}
+html.dark .text-gray-900,
+html.dark .text-gray-800,
+html.dark .text-slate-950,
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+  color: #f8fafc !important;
+}
+html.dark .text-gray-700,
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+html.dark .bg-gray-50,
+html.dark .bg-slate-50 {
+  background-color: rgba(15, 23, 42, 0.76) !important;
+}
+html.dark .bg-gray-100,
+html.dark .bg-slate-100 {
+  background-color: rgba(30, 41, 59, 0.9) !important;
+}
+html.dark .public-hero-card,
+html.dark .emergency-alert-card,
+html.dark .dashboard-panel,
+html.dark .dashboard-stat-card,
+html.dark .settings-card,
+html.dark .recommendation-card,
+html.dark .assistant-card,
+html.dark .notification-card {
+  background: linear-gradient(145deg, rgba(15,23,42,.98), rgba(17,24,39,.94)) !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+html.dark .public-hero-card h1,
+html.dark .public-hero-card h2,
+html.dark .public-hero-card h3,
+html.dark .emergency-alert-card h1,
+html.dark .emergency-alert-card h2,
+html.dark .emergency-alert-card h3,
+html.dark .settings-card h1,
+html.dark .settings-card h2,
+html.dark .settings-card h3,
+html.dark .recommendation-card h1,
+html.dark .recommendation-card h2,
+html.dark .recommendation-card h3,
+html.dark .assistant-card h1,
+html.dark .assistant-card h2,
+html.dark .assistant-card h3 {
+  color: #ffffff !important;
+}
+html.dark .public-hero-card p,
+html.dark .emergency-alert-card p,
+html.dark .settings-card p,
+html.dark .recommendation-card p,
+html.dark .assistant-card p,
+html.dark .notification-card p {
+  color: #cbd5e1 !important;
+}
+html.dark .public-hero-accent,
+html.dark .text-red-600,
+html.dark .text-red-700 {
+  color: #f87171 !important;
+}
+html.dark select option {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+}
+html.dark .settings-card button:not(.bg-red-600):not(.bg-slate-950),
+html.dark .recommendation-card button:not(.bg-red-600):not(.bg-gray-900) {
+  color: #e2e8f0;
+}
+html.dark .assistant-card .bg-red-600,
+html.dark .recommendation-card .bg-red-600,
+html.dark .settings-card .bg-red-600 {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+html.dark .settings-card .bg-green-50,
+html.dark .recommendation-card .bg-green-50 {
+  background-color: rgba(6, 78, 59, .55) !important;
+  color: #a7f3d0 !important;
+}
+html.dark .settings-card .bg-amber-50,
+html.dark .recommendation-card .bg-amber-50 {
+  background-color: rgba(120, 53, 15, .55) !important;
+  color: #fde68a !important;
+}

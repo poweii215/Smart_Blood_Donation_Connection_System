@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Calendar, CheckCircle2, Droplets, HeartHandshake, TrendingUp, Users, Activity, Clock, Award } from 'lucide-react';
+import { AlertTriangle, Award, Bell, Calendar, CheckCircle2, Clock, Droplets, HeartHandshake, LineChart, TrendingUp, Users, Activity } from 'lucide-react';
 import { bloodBankService } from '../services/bloodbank.service';
 import { appointmentService } from '../services/appointment.service';
 import { analyticsService } from '../services/analytics.service';
@@ -10,6 +10,8 @@ export default function Dashboard() {
   const [inventory, setInventory] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [hospitalAnalytics, setHospitalAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const user = authService.getCurrentUser();
   const isAdmin = user?.role === 'HOSPITAL_ADMIN';
@@ -18,14 +20,19 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [invData, appData, summaryData] = await Promise.all([
+        const requests = [
           bloodBankService.getInventory(),
           isAdmin ? appointmentService.getAllAppointments() : appointmentService.getMyAppointments(),
           analyticsService.getSummary(),
-        ]);
-        setInventory(invData || []);
-        setAppointments(appData || []);
-        setSummary(summaryData || null);
+          analyticsService.getNotifications(),
+        ];
+        if (isAdmin) requests.push(analyticsService.getHospitalAnalytics());
+        const results = await Promise.all(requests);
+        setInventory(results[0] || []);
+        setAppointments(results[1] || []);
+        setSummary(results[2] || null);
+        setNotifications(results[3]?.items || []);
+        if (isAdmin) setHospitalAnalytics(results[4] || null);
       } catch (err) {
         console.error('Failed to fetch dashboard data', err);
       } finally {
@@ -42,14 +49,14 @@ export default function Dashboard() {
 
   if (loading) return <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-400">{tr('loadingDashboard')}</div>;
 
+  if (!isAdmin) return <DonorDashboard user={user} summary={summary} appointments={appointments} notifications={notifications} tr={tr} />;
+
   const totalUnits = inventory.reduce((acc, item) => acc + Number(item.quantity || item.current_quantity || 0), 0);
   const completedToday = todayAppointments.filter((a) => a.status === 'COMPLETED').length;
   const pendingToday = todayAppointments.filter((a) => a.status === 'PENDING').length;
   const activeDonors = summary?.potential_donors || summary?.active_donors || 0;
   const emergencyTypes = inventory.filter((item) => item.emergency_mode || item.status === 'EMERGENCY' || item.status === 'CRITICAL' || Number(item.quantity || 0) < Number(item.safety_threshold || item.safety_stock || 0));
   const topEmergency = emergencyTypes[0];
-
-  if (!isAdmin) return <DonorDashboard user={user} summary={summary} appointments={appointments} tr={tr} />;
 
   return (
     <div className="space-y-6">
@@ -59,30 +66,30 @@ export default function Dashboard() {
             <div className="flex items-center gap-5">
               <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-red-600 text-white shadow-lg shadow-red-100"><AlertTriangle className="h-9 w-9" /></div>
               <div>
-                <p className="text-xl font-black uppercase tracking-wide text-red-600">{tr('emergencyAlert')}</p>
+                <p className="text-xl font-black uppercase tracking-wide text-red-600">{tr('emergencyAlert').toUpperCase()}</p>
                 <h2 className="mt-1 text-lg font-black text-slate-950">{tr('bloodTypeCritical', { bloodType: topEmergency.blood_type })}</h2>
                 <p className="text-slate-600">{tr('emergencyHint', { bloodType: topEmergency.blood_type })}</p>
               </div>
             </div>
-            <a href="/recommendation" className="inline-flex items-center justify-center rounded-2xl bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-100 hover:bg-red-700">{tr('viewDetails')}</a>
+            <a href="/recommendation" className="inline-flex items-center justify-center rounded-2xl bg-red-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-red-100 hover:bg-red-700">{tr('emergencyOpenRecommendation')}</a>
           </div>
         </section>
       )}
 
       <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={Calendar} color="blue" title={tr('todayAppointments')} value={todayAppointments.length || appointments.length} note={tr('pendingToday', { count: pendingToday })} />
-        <StatCard icon={Droplets} color="green" title={tr('totalDonations')} value={summary?.completed_donations || completedToday || appointments.filter(a => a.status === 'COMPLETED').length} note={tr('completedRecords')} />
+        <StatCard icon={Droplets} color="green" title={tr('completedDonationsTitle')} value={summary?.completed_donations || completedToday || appointments.filter(a => a.status === 'COMPLETED').length} note={tr('completedRecords')} />
         <StatCard icon={Users} color="amber" title={tr('totalDonors')} value={summary?.total_donors || activeDonors || 0} note={tr('registeredDonors')} />
-        <StatCard icon={Activity} color="purple" title={tr('activeDonors')} value={activeDonors || 0} note={tr('availableRecommendation')} />
+        <StatCard icon={Activity} color="purple" title={tr('emergencyTypes')} value={hospitalAnalytics?.emergency_blood_types ?? emergencyTypes.length} note={tr('needAttention')} />
       </section>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.25fr_1fr_.85fr]">
-        <Panel title={tr('todayAppointments')} action={tr('viewDetails')}>
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_.95fr_.9fr]">
+        <Panel title={tr('todayAppointments')} action={tr('operationalList')}>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead><tr className="bg-slate-50 text-xs font-black uppercase tracking-wider text-slate-400"><th className="px-4 py-4">{tr('time')}</th><th className="px-4 py-4">{tr('donor')}</th><th className="px-4 py-4">{tr('bloodType')}</th><th className="px-4 py-4">{tr('status')}</th></tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {(todayAppointments.length ? todayAppointments : appointments).slice(0, 5).map((app) => (
+                {(todayAppointments.length ? todayAppointments : appointments).slice(0, 6).map((app) => (
                   <tr key={app.id} className="text-sm">
                     <td className="px-4 py-4 font-semibold text-slate-700">{formatTime(app.appointment_date)}</td>
                     <td className="px-4 py-4 font-bold text-slate-800">{app.donor_name || app.user_name || tr('donor')}</td>
@@ -96,32 +103,40 @@ export default function Dashboard() {
           </div>
         </Panel>
 
-        <Panel title={tr('inventoryStatus')} action={tr('viewDetails')}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead><tr className="bg-slate-50 text-xs font-black uppercase tracking-wider text-slate-400"><th className="px-4 py-4">{tr('bloodType')}</th><th className="px-4 py-4">{tr('inStock')}</th><th className="px-4 py-4">{tr('status')}</th></tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {inventory.slice(0, 8).map((item) => (
-                  <tr key={item.blood_type} className="text-sm">
-                    <td className="px-4 py-3 font-black text-slate-950">{item.blood_type}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-700">{Number(item.quantity || item.current_quantity || 0).toFixed(1)}</td>
-                    <td className="px-4 py-3"><InventoryBadge item={item} tr={tr} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <Panel title={tr('inventoryStatus')} action={tr('safetyStock')}>
+          <div className="space-y-3">
+            {inventory.slice(0, 8).map((item) => (
+              <InventoryRow key={item.blood_type} item={item} tr={tr} />
+            ))}
           </div>
         </Panel>
 
-        <Panel title={tr('inventoryOverview')}>
-          <div className="flex flex-col items-center justify-center py-3">
-            <div className="relative flex h-56 w-56 items-center justify-center rounded-full bg-[conic-gradient(#22c55e_0_62%,#f59e0b_62%_78%,#ef4444_78%_100%)]">
-              <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full bg-white shadow-inner"><span className="text-sm text-slate-500">{tr('total')}</span><span className="text-3xl font-black text-slate-950">{Math.round(totalUnits)}</span><span className="text-sm text-slate-500">{tr('units')}</span></div>
-            </div>
-            <div className="mt-6 w-full space-y-3 text-sm">
-              <Legend color="bg-green-500" label={tr('adequate')} value={inventory.filter(i => !['CRITICAL','EMERGENCY','WARNING'].includes(i.status)).length} />
-              <Legend color="bg-amber-500" label={tr('low')} value={inventory.filter(i => i.status === 'WARNING').length} />
-              <Legend color="bg-red-500" label={tr('critical')} value={emergencyTypes.length} />
+        <Panel title={tr('notificationCenter')} action={tr('liveAlerts')}>
+          <div className="space-y-3">
+            {notifications.slice(0, 4).map((n, idx) => <NotificationItem key={`${n.type}-${idx}`} item={n} />)}
+            {!notifications.length && <p className="py-10 text-center text-sm text-slate-400">{tr('noNotifications')}</p>}
+            <a href="/notifications" className="mt-3 inline-flex w-full justify-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">{tr('viewNotificationCenter')}</a>
+          </div>
+        </Panel>
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <Panel title={tr('monthlyDonationAnalytics')} action={tr('last12Months')}>
+          <MonthlyChart data={hospitalAnalytics?.monthly_donations || []} />
+        </Panel>
+        <Panel title={tr('hospitalPerformance')}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <MetricTile label={tr('donorRetention')} value={`${hospitalAnalytics?.donor_retention_rate ?? 0}%`} />
+            <MetricTile label={tr('completionRate')} value={`${hospitalAnalytics?.appointment_completion_rate ?? 0}%`} />
+            <MetricTile label={tr('completedAppointments')} value={hospitalAnalytics?.completed_appointments ?? 0} />
+            <MetricTile label={tr('totalAppointments')} value={hospitalAnalytics?.total_appointments ?? 0} />
+          </div>
+          <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 p-4">
+            <p className="text-sm font-black text-red-700">{tr('mostNeededBloodTypes')}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(hospitalAnalytics?.most_needed_blood_types || inventory).slice(0, 5).map((b) => (
+                <span key={b.blood_type} className="rounded-xl bg-white px-3 py-2 text-sm font-black text-red-600 shadow-sm">{b.blood_type}: {Number(b.quantity || 0).toFixed(1)}</span>
+              ))}
             </div>
           </div>
         </Panel>
@@ -130,33 +145,126 @@ export default function Dashboard() {
   );
 }
 
-function DonorDashboard({ user, summary, appointments, tr }) {
+function DonorDashboard({ user, summary, appointments, notifications, tr }) {
   const completed = appointments.filter(a => a.status === 'COMPLETED').length;
+  const latestActive = appointments.find(a => ['APPROVED','CHECKED_IN','IN_PROGRESS','COMPLETED'].includes(a.status)) || appointments[0];
   const days = summary?.days_until_eligible ?? 0;
   const points = summary?.humanitarian_points ?? user?.humanitarian_points ?? 0;
   const progress = 100 - Math.min(100, (days / 84) * 100);
   return (
     <div className="space-y-6">
       <section className="donor-impact-card rounded-3xl border border-red-100 bg-gradient-to-r from-red-50 to-white p-6 shadow-sm">
-        <div className="flex items-start gap-5"><div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-red-600 text-white shadow-lg shadow-red-100"><HeartHandshake className="h-8 w-8" /></div><div><p className="text-sm font-black uppercase tracking-wider text-red-600">{tr('donationImpactMessage')}</p><h1 className="mt-1 text-2xl font-black text-slate-950">{tr('helloUser', { name: user?.full_name || tr('donor') })}</h1><p className="mt-1 text-slate-600">{summary?.impact_message || tr('defaultImpact')}</p></div></div>
+        <div className="flex items-start gap-5">
+          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-red-600 text-white shadow-lg shadow-red-100"><HeartHandshake className="h-8 w-8" /></div>
+          <div>
+            <p className="text-sm font-black uppercase tracking-wider text-red-600">{tr('donationImpactMessage')}</p>
+            <h1 className="mt-1 text-2xl font-black text-slate-950">{tr('helloUser', { name: user?.full_name || tr('donor') })}</h1>
+            <p className="mt-1 text-slate-600">{summary?.impact_message || tr('defaultImpact')}</p>
+          </div>
+        </div>
       </section>
+
       <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Award} color="amber" title={tr('humanitarianPoints')} value={points} note={tr('donorContribution')} />
-        <StatCard icon={Clock} color="purple" title={tr('eligibleAgainIn')} value={`${days} ${tr('days')}`} note={tr('cycle84')} />
-        <StatCard icon={CheckCircle2} color="green" title={tr('completedDonations')} value={summary?.completed_donations ?? completed} note={tr('successfulDonations')} />
-        <StatCard icon={TrendingUp} color="red" title={tr('livesImpacted')} value={(summary?.completed_donations ?? completed) * 3} note={tr('estimatedImpact')} />
+        <StatCard icon={Award} color="amber" title={tr('humanitarianPoints')} value={points} note={tr('yourContribution')} />
+        <StatCard icon={Clock} color="purple" title={tr('eligibleAgainIn')} value={`${days} ${tr('days')}`} note={tr('recoveryCycle')} />
+        <StatCard icon={CheckCircle2} color="green" title={tr('completedDonationsTitle')} value={summary?.completed_donations ?? completed} note={tr('successfulDonationRecords')} />
+        <StatCard icon={TrendingUp} color="blue" title={tr('reliability')} value={`${Math.round(summary?.reliability_score ?? user?.reliability_score ?? 100)}%`} note={tr('appointmentTrustScore')} />
       </section>
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title={tr('eligibilityCountdown')}><div className="py-4"><div className="mb-3 flex items-center justify-between text-sm font-bold text-slate-600"><span>{tr('recoveryProgress')}</span><span>{Math.round(progress)}%</span></div><div className="h-4 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-red-600" style={{ width: `${progress}%` }} /></div><p className="mt-4 text-sm text-slate-500">{days === 0 ? tr('eligibleNow') : tr('eligibleLater', { days })}</p></div></Panel>
-        <Panel title={tr('recentAppointments')}><div className="space-y-3">{appointments.slice(0, 5).map(app => (<div key={app.id} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4"><div><p className="font-black text-slate-900">{new Date(app.appointment_date).toLocaleDateString()}</p><p className="text-sm text-slate-500">SBDCs</p></div><StatusBadge status={app.status} /></div>))}{appointments.length === 0 && <p className="py-10 text-center text-sm text-slate-400">{tr('noAppointments')}</p>}</div></Panel>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_.85fr]">
+        <Panel title={tr('donorJourneyVisualization')} action={tr('yourCurrentPath')}>
+          <JourneyTimeline currentStatus={latestActive?.status} daysUntilEligible={days} tr={tr} />
+        </Panel>
+        <Panel title={tr('notificationCenter')} action={tr('donor')}>
+          <div className="space-y-3">
+            {notifications.slice(0, 5).map((n, idx) => <NotificationItem key={`${n.type}-${idx}`} item={n} />)}
+            {!notifications.length && <p className="py-10 text-center text-sm text-slate-400">{tr('noNotifications')}</p>}
+            <a href="/notifications" className="mt-3 inline-flex w-full justify-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">{tr('openNotificationCenter')}</a>
+          </div>
+        </Panel>
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[.9fr_1.1fr]">
+        <Panel title={tr('eligibilityCountdown')}>
+          <div className="space-y-4">
+            <div className="h-4 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-red-600" style={{ width: `${progress}%` }} /></div>
+            <p className="text-sm font-semibold text-slate-600">{days === 0 ? tr('eligibleNow') : tr('eligibleLater', { days })}</p>
+          </div>
+        </Panel>
+        <Panel title={tr('recentAppointmentsTitle')}>
+          <div className="divide-y divide-slate-100">
+            {appointments.slice(0, 4).map((app) => <div key={app.id} className="flex items-center justify-between py-4 text-sm"><div><p className="font-bold text-slate-800">{formatDate(app.appointment_date)}</p><p className="text-slate-500">{app.pre_screening_result || tr('screeningNotUpdated')}</p></div><StatusBadge status={app.status} /></div>)}
+            {appointments.length === 0 && <p className="py-10 text-center text-sm text-slate-400">{tr('noAppointmentsYet')}</p>}
+          </div>
+        </Panel>
       </section>
     </div>
   );
 }
 
+function JourneyTimeline({ currentStatus, daysUntilEligible, tr }) {
+  const steps = [
+    { key: 'REGISTERED', label: tr('registered'), hint: tr('registeredHint') },
+    { key: 'APPROVED', label: tr('approved'), hint: tr('approvedHint') },
+    { key: 'CHECKED_IN', label: tr('checkedIn'), hint: tr('checkedInHint') },
+    { key: 'COMPLETED', label: tr('donated'), hint: tr('donatedHint') },
+    { key: 'RECOVERY', label: tr('recovery'), hint: tr('recoveryHint') },
+    { key: 'ELIGIBLE', label: tr('eligibleAgain'), hint: tr('eligibleAgainHint') },
+  ];
+  const statusIndex = { PENDING: 0, APPROVED: 1, CHECKED_IN: 2, IN_PROGRESS: 2, COMPLETED: daysUntilEligible === 0 ? 5 : 4, CANCELLED: 0 };
+  const activeIndex = statusIndex[currentStatus] ?? 0;
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      {steps.map((step, idx) => {
+        const active = idx <= activeIndex;
+        return <div key={step.key} className={`rounded-2xl border p-4 ${active ? 'border-red-100 bg-red-50' : 'border-slate-200 bg-white'}`}>
+          <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-full text-sm font-black ${active ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{idx + 1}</div>
+          <p className={`text-sm font-black ${active ? 'text-red-700' : 'text-slate-500'}`}>{step.label}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">{step.hint}</p>
+        </div>;
+      })}
+    </div>
+  );
+}
+
+function MonthlyChart({ data }) {
+  const safe = data.length ? data : [{ month: '—', completed: 0, total: 0 }];
+  const maxVal = Math.max(1, ...safe.map(d => Number(d.completed || d.total || 0)));
+  return <div className="space-y-3">
+    {safe.slice(-12).map((d, idx) => {
+      const value = Number(d.completed || 0);
+      const width = Math.max(4, (value / maxVal) * 100);
+      return <div key={`${d.month}-${idx}`} className="grid grid-cols-[80px_1fr_50px] items-center gap-3 text-sm">
+        <span className="font-bold text-slate-500">{d.month}</span>
+        <div className="h-4 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-red-600" style={{ width: `${width}%` }} /></div>
+        <span className="text-right font-black text-slate-800">{value}</span>
+      </div>;
+    })}
+  </div>;
+}
+
+function InventoryRow({ item, tr }) {
+  const q = Number(item.quantity || item.current_quantity || 0);
+  const th = Number(item.safety_threshold || item.safety_stock || 1);
+  const pct = Math.min(100, Math.max(4, (q / Math.max(th * 2, 1)) * 100));
+  const critical = q < th;
+  return <div className="rounded-2xl border border-slate-100 p-4">
+    <div className="mb-2 flex items-center justify-between"><span className="font-black text-slate-950">{item.blood_type}</span><span className={`rounded-lg px-2 py-1 text-xs font-black ${critical ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{critical ? tr('criticalLabel') : tr('safeLabel')}</span></div>
+    <div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${critical ? 'bg-red-600' : 'bg-green-500'}`} style={{ width: `${pct}%` }} /></div>
+    <p className="mt-2 text-xs font-semibold text-slate-500">{q.toFixed(1)} / safety {th.toFixed(1)}</p>
+  </div>;
+}
+
+function NotificationItem({ item }) {
+  const cls = item.priority === 'HIGH' ? 'border-red-100 bg-red-50 text-red-700' : item.priority === 'SUCCESS' ? 'border-green-100 bg-green-50 text-green-700' : 'border-blue-100 bg-blue-50 text-blue-700';
+  return <div className={`rounded-2xl border p-4 ${cls}`}>
+    <div className="flex items-start gap-3"><Bell className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="text-sm font-black">{item.title}</p><p className="mt-1 text-sm opacity-90">{item.message}</p></div></div>
+  </div>;
+}
+
 function Panel({ title, action, children }) { return <section className="dashboard-panel rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-black text-slate-950">{title}</h2>{action && <span className="text-sm font-bold text-blue-600">{action}</span>}</div>{children}</section>; }
 function StatCard({ icon: Icon, color, title, value, note }) { const colors = { blue:'bg-blue-50 text-blue-600', green:'bg-green-50 text-green-600', amber:'bg-amber-50 text-amber-600', purple:'bg-purple-50 text-purple-600', red:'bg-red-50 text-red-600' }; return <article className="dashboard-stat-card rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center gap-5"><div className={`flex h-16 w-16 items-center justify-center rounded-full ${colors[color] || colors.red}`}><Icon className="h-8 w-8" /></div><div><p className="text-sm font-bold text-slate-500">{title}</p><p className="mt-1 text-3xl font-black tracking-tight text-slate-950">{value}</p><p className="mt-2 text-xs font-semibold text-green-600">↑ {note}</p></div></div></article>; }
 function StatusBadge({ status }) { const styles = { PENDING:'bg-amber-50 text-amber-700', APPROVED:'bg-blue-50 text-blue-700', CHECKED_IN:'bg-indigo-50 text-indigo-700', IN_PROGRESS:'bg-purple-50 text-purple-700', COMPLETED:'bg-green-50 text-green-700', CANCELLED:'bg-slate-100 text-slate-600' }; return <span className={`inline-flex rounded-lg px-3 py-1 text-xs font-black ${styles[status] || styles.PENDING}`}>{String(status || 'PENDING').replace('_', ' ')}</span>; }
-function InventoryBadge({ item, tr }) { const q = Number(item.quantity || item.current_quantity || 0); const threshold = Number(item.safety_threshold || item.safety_stock || 0); let label = item.status || tr('adequate'); let cls = 'bg-green-50 text-green-700'; if (item.emergency_mode || item.status === 'EMERGENCY' || item.status === 'CRITICAL' || q < threshold) { label = tr('critical'); cls = 'bg-red-50 text-red-700'; } else if (item.status === 'WARNING' || q < threshold * 1.5) { label = tr('low'); cls = 'bg-amber-50 text-amber-700'; } else { label = tr('adequate'); } return <span className={`inline-flex rounded-lg px-3 py-1 text-xs font-black ${cls}`}>{label}</span>; }
-function Legend({ color, label, value }) { return <div className="flex items-center justify-between"><div className="flex items-center gap-2"><span className={`h-3 w-3 rounded ${color}`} /><span className="text-slate-600">{label}</span></div><span className="font-black text-slate-900">{value}</span></div>; }
+function MetricTile({ label, value }) { return <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4"><p className="text-sm font-bold text-slate-500">{label}</p><p className="mt-2 text-2xl font-black text-slate-950">{value}</p></div>; }
 function formatTime(date) { if (!date) return '--:--'; try { return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return '--:--'; } }
+function formatDate(date) { if (!date) return '--'; try { return new Date(date).toLocaleString(); } catch { return String(date); } }

@@ -1,8 +1,168 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Droplets, Calendar, LayoutDashboard, LogOut, User, Target, FileSpreadsheet, Settings, Bell, ChevronDown, Bot } from 'lucide-react';
+import { Droplets, Calendar, LayoutDashboard, LogOut, User, Target, FileSpreadsheet, Settings, Bell, ChevronDown, Bot, AlertTriangle, CheckCircle2, HeartPulse, Megaphone, X } from 'lucide-react';
 import { authService } from '../services/auth.service';
+import { analyticsService } from '../services/analytics.service';
 import { useI18n } from '../utils/userSettings';
+
+function notificationKey(user) {
+  return `sbdcs_read_notifications_${user?.role || 'guest'}_${user?.id || user?.phone || 'unknown'}`;
+}
+
+function notificationId(item) {
+  return `${item.type || 'INFO'}|${item.title || ''}|${item.message || ''}|${item.created_at || ''}`;
+}
+
+function NotificationBell({ user }) {
+  const tr = useI18n(user);
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [readIds, setReadIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(notificationKey(user)) || '[]'); } catch { return []; }
+  });
+  const panelRef = useRef(null);
+
+  const unreadItems = useMemo(() => items.filter(item => !readIds.includes(notificationId(item))), [items, readIds]);
+  const unreadCount = unreadItems.length;
+
+  const loadNotifications = async () => {
+    setLoading(true);
+    try {
+      const data = await analyticsService.getNotifications();
+      setItems(data?.items || []);
+    } catch (err) {
+      console.error('Failed to load notifications', err);
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+    const timer = setInterval(loadNotifications, 30000);
+    return () => clearInterval(timer);
+  }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (panelRef.current && !panelRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const markAllRead = () => {
+    const ids = items.map(notificationId);
+    setReadIds(ids);
+    localStorage.setItem(notificationKey(user), JSON.stringify(ids));
+  };
+
+  const markOneRead = (item) => {
+    const id = notificationId(item);
+    const next = Array.from(new Set([...readIds, id]));
+    setReadIds(next);
+    localStorage.setItem(notificationKey(user), JSON.stringify(next));
+  };
+
+  return (
+    <div className="relative" ref={panelRef}>
+      <button
+        type="button"
+        onClick={() => { setOpen(v => !v); if (!open) loadNotifications(); }}
+        className="relative rounded-2xl border border-slate-100 bg-white p-3 text-slate-500 shadow-sm transition hover:text-red-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-red-400"
+        aria-label={tr('openNotifications')}
+      >
+        <Bell className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black text-white">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-14 z-[100] w-[360px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl shadow-slate-200/70 dark:border-slate-700 dark:bg-slate-950 dark:shadow-black/40">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <div>
+              <h3 className="text-base font-black text-slate-950 dark:text-slate-50">{tr('notificationsTitle')}</h3>
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{tr('unreadAlerts', { count: unreadCount })}</p>
+            </div>
+            <button onClick={() => setOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="max-h-[420px] overflow-y-auto p-3">
+            {loading ? (
+              <p className="py-8 text-center text-sm font-semibold text-slate-400">{tr('loadingNotifications')}</p>
+            ) : items.length ? (
+              <div className="space-y-2">
+                {items.slice(0, 6).map((item, index) => (
+                  <MiniNotification
+                    key={`${notificationId(item)}-${index}`}
+                    item={item}
+                    unread={!readIds.includes(notificationId(item))}
+                    onClick={() => markOneRead(item)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm font-semibold text-slate-400">{tr('noActiveNotifications')}</p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 p-3 dark:border-slate-800">
+            <button onClick={markAllRead} className="rounded-2xl px-4 py-2 text-xs font-black text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100">
+              {tr('markAllRead')}
+            </button>
+            <Link to="/notifications" onClick={() => setOpen(false)} className="rounded-2xl bg-red-600 px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-red-700">
+              {tr('viewAll')}
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniNotification({ item, unread, onClick }) {
+  const iconMap = {
+    EMERGENCY: AlertTriangle,
+    LOW_STOCK: HeartPulse,
+    EMERGENCY_CAMPAIGN: Megaphone,
+    UPCOMING_APPOINTMENT: Calendar,
+    APPOINTMENT_APPROVED: CheckCircle2,
+    ELIGIBLE_AGAIN: CheckCircle2,
+    RECOVERY: HeartPulse,
+    TODAY_APPOINTMENTS: Calendar,
+  };
+  const Icon = iconMap[item.type] || Bell;
+  const isHigh = item.priority === 'HIGH';
+  const isSuccess = item.priority === 'SUCCESS';
+  const tone = isHigh
+    ? 'bg-red-50 text-red-700 border-red-100 dark:bg-red-950/40 dark:text-red-200 dark:border-red-900/70'
+    : isSuccess
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900/70'
+      : 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-900/70';
+  return (
+    <Link to="/notifications" onClick={onClick} className={`block rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-md ${tone}`}>
+      <div className="flex gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/80 dark:bg-slate-900/80">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <h4 className="line-clamp-1 text-sm font-black">{item.title}</h4>
+            {unread && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-600" />}
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs font-semibold opacity-80">{item.message}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
@@ -35,25 +195,26 @@ export default function Layout({ children }) {
     { labelKey: 'recommendation', path: '/recommendation', icon: Target, roles: ['HOSPITAL_ADMIN'] },
     { labelKey: 'reports', path: '/reports', icon: FileSpreadsheet, roles: ['HOSPITAL_ADMIN'] },
     { labelKey: 'assistant', path: '/assistant', icon: Bot, roles: ['DONOR'] },
+    { labelKey: 'notifications', path: '/notifications', icon: Bell, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
     { labelKey: 'settings', path: '/settings', icon: Settings, roles: ['HOSPITAL_ADMIN', 'DONOR'] },
   ];
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f8fafc] font-sans text-slate-900">
-      <aside className="fixed inset-y-0 left-0 z-50 hidden h-screen w-[280px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white md:flex">
+    <div className="h-screen overflow-hidden bg-[#f8fafc] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <aside className="fixed inset-y-0 left-0 z-50 hidden h-screen w-[280px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:flex">
         <div className="shrink-0 px-6 py-6">
           <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-100">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-red-700 shadow-lg shadow-red-100 dark:shadow-red-950/40">
               <Droplets className="h-8 w-8 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-950">SBDCs</h1>
-              <p className="text-sm leading-tight text-slate-500">{tr('appSubtitle')}</p>
+              <h1 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">SBDCs</h1>
+              <p className="text-sm leading-tight text-slate-500 dark:text-slate-400">{tr('appSubtitle')}</p>
             </div>
           </div>
         </div>
 
-        <div className="mx-6 shrink-0 border-t border-slate-100" />
+        <div className="mx-6 shrink-0 border-t border-slate-100 dark:border-slate-800" />
 
         <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-5 pr-3">
           {navItems.filter(item => item.roles.includes(user?.role)).map((item) => {
@@ -64,20 +225,20 @@ export default function Layout({ children }) {
                 to={item.path}
                 className={`group flex items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold transition-all ${
                   active
-                    ? 'bg-red-50 text-red-600 shadow-sm shadow-red-100'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                    ? 'bg-red-50 text-red-600 shadow-sm shadow-red-100 dark:bg-red-950/40 dark:text-red-300 dark:shadow-none'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-50'
                 }`}
               >
-                <item.icon className={`h-5 w-5 ${active ? 'text-red-600' : 'text-slate-400 group-hover:text-slate-700'}`} />
+                <item.icon className={`h-5 w-5 ${active ? 'text-red-600 dark:text-red-300' : 'text-slate-400 group-hover:text-slate-700 dark:text-slate-500 dark:group-hover:text-slate-200'}`} />
                 {tr(item.labelKey)}
               </Link>
             );
           })}
         </nav>
 
-        <div className="shrink-0 bg-white px-6 pb-5 pt-3">
-          <div className="border-t border-slate-100 pt-5">
-            <button onClick={handleLogout} className="flex w-full items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold text-red-600 transition hover:bg-red-50">
+        <div className="shrink-0 bg-white px-6 pb-5 pt-3 dark:bg-slate-950">
+          <div className="border-t border-slate-100 pt-5 dark:border-slate-800">
+            <button onClick={handleLogout} className="flex w-full items-center gap-4 rounded-2xl px-5 py-4 text-[15px] font-bold text-red-600 transition hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40">
               <LogOut className="h-5 w-5" />
               {tr('logout')}
             </button>
@@ -86,29 +247,26 @@ export default function Layout({ children }) {
       </aside>
 
       <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden md:ml-[280px]">
-        <header className="sticky top-0 z-40 flex h-[76px] items-center justify-between border-b border-slate-200 bg-white/90 px-6 backdrop-blur lg:px-8">
+        <header className="sticky top-0 z-40 flex h-[76px] items-center justify-between border-b border-slate-200 bg-white/90 px-6 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 lg:px-8">
           <div className="flex items-center gap-4">
-            <button className="md:hidden rounded-xl border border-slate-200 p-2 text-slate-600">☰</button>
+            <button className="rounded-xl border border-slate-200 p-2 text-slate-600 dark:border-slate-700 dark:text-slate-300 md:hidden">☰</button>
             <div>
-              <h2 className="text-xl font-black text-slate-950">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalDashboard') : tr('donorDashboard')}</h2>
-              <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalSubtitle') : tr('donorSubtitle')}</p>
+              <h2 className="text-xl font-black text-slate-950 dark:text-white">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalDashboard') : tr('donorDashboard')}</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalSubtitle') : tr('donorSubtitle')}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="relative rounded-2xl border border-slate-100 bg-white p-3 text-slate-500 shadow-sm hover:text-red-600">
-              <Bell className="h-5 w-5" />
-              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-black text-white">3</span>
-            </button>
+            <NotificationBell user={user} />
             <div className="hidden items-center gap-3 md:flex">
-              <div className="h-11 w-11 overflow-hidden rounded-2xl bg-slate-100 flex items-center justify-center">
+              <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800">
                 {user?.avatar_url ? <img src={user.avatar_url} alt="avatar" className="h-full w-full object-cover" /> : <User className="h-6 w-6 text-slate-400" />}
               </div>
               <div className="leading-tight">
-                <p className="text-sm font-black text-slate-950">{user?.full_name || (user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalAdmin') : tr('donor'))}</p>
-                <p className="text-sm text-slate-500">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospital') : tr('donor')}</p>
+                <p className="text-sm font-black text-slate-950 dark:text-white">{user?.full_name || (user?.role === 'HOSPITAL_ADMIN' ? tr('hospitalAdmin') : tr('donor'))}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">{user?.role === 'HOSPITAL_ADMIN' ? tr('hospital') : tr('donor')}</p>
               </div>
-              <ChevronDown className="h-4 w-4 text-slate-500" />
+              <ChevronDown className="h-4 w-4 text-slate-500 dark:text-slate-400" />
             </div>
           </div>
         </header>

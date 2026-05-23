@@ -7,4 +7,6 @@ export const analyticsService = {
   updateRecommendationSettings: async (data) => (await api.put('/analytics/recommendation-settings', data)).data,
   exportDonors: async () => (await api.get('/analytics/donors/export', { responseType: 'blob' })).data,
   exportTodayAppointments: async (params = {}) => (await api.get('/analytics/appointments/today/export', { params, responseType: 'blob' })).data,
+  getNotifications: async () => (await api.get('/analytics/notifications')).data,
+  getHospitalAnalytics: async () => (await api.get('/analytics/hospital-analytics')).data,
 };
