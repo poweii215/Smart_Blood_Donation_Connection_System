@@ -588,3 +588,108 @@ async def recommendations(data: RecommendationRequest, current_user: dict = Depe
         },
         "items": top
     }
+
+@router.get("/notifications")
+async def notifications(current_user: dict = Depends(get_current_user)):
+    """Role-aware notification center generated from live system data."""
+    conn = get_db_connection(); cur = conn.cursor()
+    now = datetime.utcnow()
+    items = []
+    try:
+        if is_admin(current_user):
+            cur.execute("SELECT blood_type, quantity, safety_threshold FROM blood_inventory WHERE hospital_id=1 ORDER BY quantity ASC")
+            for row in cur.fetchall():
+                q = float(row["quantity"] or 0); th = float(row["safety_threshold"] or 0)
+                if q <= th * 0.5:
+                    items.append({"type":"EMERGENCY", "priority":"HIGH", "title":f"Khẩn cấp thiếu máu {row['blood_type']}", "message":f"Nhóm máu {row['blood_type']} chỉ còn {q:.1f} đơn vị, dưới 50% ngưỡng an toàn.", "created_at":now.isoformat()})
+                elif q < th:
+                    items.append({"type":"LOW_STOCK", "priority":"MEDIUM", "title":f"Kho máu {row['blood_type']} đang thấp", "message":f"Tồn kho {q:.1f}/{th:.1f} đơn vị. Nên xem danh sách donor phù hợp.", "created_at":now.isoformat()})
+            cur.execute("""
+                SELECT COUNT(*) as c FROM appointments
+                WHERE date(appointment_date)=date('now') AND status IN ('PENDING','APPROVED','CHECKED_IN','IN_PROGRESS')
+            """)
+            today = cur.fetchone()["c"]
+            if today:
+                items.append({"type":"TODAY_APPOINTMENTS", "priority":"INFO", "title":"Lịch hẹn hôm nay", "message":f"Có {today} lịch hẹn cần theo dõi trong hôm nay.", "created_at":now.isoformat()})
+        else:
+            user_id = current_user["id"]
+            cur.execute("""
+                SELECT * FROM appointments WHERE donor_id=?
+                ORDER BY appointment_date DESC LIMIT 5
+            """, (user_id,))
+            appointments = [dict(r) for r in cur.fetchall()]
+            upcoming = None
+            for a in appointments:
+                try:
+                    dt = datetime.fromisoformat(str(a.get("appointment_date")).replace('Z','').split('.')[0])
+                    if dt >= now and a.get("status") in ("PENDING","APPROVED","CHECKED_IN","IN_PROGRESS"):
+                        upcoming = a; break
+                except Exception:
+                    continue
+            approved = next((a for a in appointments if a.get("status") == "APPROVED"), None)
+            if approved:
+                items.append({"type":"APPOINTMENT_APPROVED", "priority":"HIGH", "title":"Lịch hẹn đã được duyệt", "message":f"Lịch hẹn ngày {approved.get('appointment_date')} đã được Hospital duyệt.", "created_at":approved.get("updated_at") or now.isoformat()})
+            if upcoming:
+                items.append({"type":"UPCOMING_APPOINTMENT", "priority":"INFO", "title":"Bạn có lịch hẹn sắp tới", "message":f"Lịch hiến máu của bạn: {upcoming.get('appointment_date')} - trạng thái {upcoming.get('status')}.", "created_at":now.isoformat()})
+            cur.execute("SELECT last_donation_date, blood_type FROM users WHERE id=?", (user_id,))
+            u = dict(cur.fetchone())
+            days = days_until_eligible(u.get("last_donation_date"))
+            if days == 0:
+                items.append({"type":"ELIGIBLE_AGAIN", "priority":"SUCCESS", "title":"Bạn đã đủ điều kiện hiến lại", "message":"Bạn có thể đặt lịch hiến máu tiếp theo nếu sức khỏe ổn định.", "created_at":now.isoformat()})
+            else:
+                items.append({"type":"RECOVERY", "priority":"INFO", "title":"Đang trong thời gian phục hồi", "message":f"Bạn còn {days} ngày nữa để đủ điều kiện hiến máu tiếp theo.", "created_at":now.isoformat()})
+            cur.execute("SELECT blood_type, quantity, safety_threshold FROM blood_inventory WHERE hospital_id=1 AND quantity <= safety_threshold ORDER BY quantity ASC LIMIT 3")
+            needs = [dict(r) for r in cur.fetchall()]
+            if needs:
+                bloods = ', '.join(r['blood_type'] for r in needs)
+                items.append({"type":"EMERGENCY_CAMPAIGN", "priority":"HIGH", "title":"Bệnh viện đang cần máu", "message":f"Các nhóm máu đang thiếu: {bloods}. Nếu phù hợp và đủ điều kiện, bạn có thể đặt lịch hỗ trợ.", "created_at":now.isoformat()})
+        return {"items": items[:10], "unread_count": len(items[:10])}
+    finally:
+        conn.close()
+
+
+@router.get("/hospital-analytics")
+async def hospital_analytics(current_user: dict = Depends(get_current_user)):
+    """Better hospital analytics for dashboard/reporting."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    conn = get_db_connection(); cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT strftime('%Y-%m', appointment_date) AS month, COUNT(*) AS total,
+                   SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS completed
+            FROM appointments
+            WHERE appointment_date >= date('now','-11 months')
+            GROUP BY strftime('%Y-%m', appointment_date)
+            ORDER BY month
+        """)
+        monthly = [dict(r) for r in cur.fetchall()]
+        cur.execute("""
+            SELECT blood_type, quantity, safety_threshold,
+                   CASE WHEN safety_threshold > 0 THEN ROUND(quantity * 1.0 / safety_threshold, 2) ELSE 999 END AS stock_ratio
+            FROM blood_inventory
+            WHERE hospital_id=1
+            ORDER BY stock_ratio ASC, quantity ASC
+        """)
+        needed = [dict(r) for r in cur.fetchall()]
+        cur.execute("SELECT COUNT(*) as c FROM users WHERE role='DONOR'")
+        total_donors = cur.fetchone()["c"] or 0
+        cur.execute("SELECT COUNT(DISTINCT donor_id) as c FROM appointments WHERE status='COMPLETED'")
+        retained = cur.fetchone()["c"] or 0
+        cur.execute("SELECT COUNT(*) as total, SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) as completed FROM appointments")
+        row = dict(cur.fetchone())
+        total_apps = row.get("total") or 0
+        completed_apps = row.get("completed") or 0
+        cur.execute("SELECT COUNT(*) as c FROM blood_inventory WHERE hospital_id=1 AND quantity <= safety_threshold * 0.5")
+        emergency_count = cur.fetchone()["c"] or 0
+        return {
+            "monthly_donations": monthly,
+            "most_needed_blood_types": needed[:5],
+            "donor_retention_rate": round((retained / total_donors * 100), 2) if total_donors else 0,
+            "appointment_completion_rate": round((completed_apps / total_apps * 100), 2) if total_apps else 0,
+            "emergency_blood_types": emergency_count,
+            "total_appointments": total_apps,
+            "completed_appointments": completed_apps,
+        }
+    finally:
+        conn.close()
