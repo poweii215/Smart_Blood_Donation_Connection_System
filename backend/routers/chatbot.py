@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import unicodedata
 
 from ..database import get_db_connection
+from ..db_helpers import get_cursor, fetchone_dict, fetchall_dict
 from .auth import get_current_user
 
 router = APIRouter()
@@ -15,10 +16,60 @@ class ChatbotAsk(BaseModel):
 
 
 def normalize_text(text: str) -> str:
+    """Lowercase, strip accents, and map Vietnamese đ/Đ -> d for intent matching."""
     text = (text or '').strip().lower()
+    # đ is not decomposed by NFD; without this, "điều kiện" never matches "dieu kien".
+    text = text.replace('đ', 'd').replace('Đ', 'd')
     text = unicodedata.normalize('NFD', text)
     text = ''.join(ch for ch in text if unicodedata.category(ch) != 'Mn')
-    return text
+    # Ignore trailing punctuation so "không?" still matches "khong".
+    text = ''.join(ch if ch.isalnum() or ch.isspace() else ' ' for ch in text)
+    return ' '.join(text.split())
+
+
+
+
+def is_eligibility_question(text: str) -> bool:
+    """Robust detector for donor eligibility questions.
+
+    Handles common Vietnamese phrasing such as:
+    - Tôi có đủ điều kiện hiến máu không?
+    - Tôi hiến máu được không?
+    - Tôi có thể hiến máu không?
+    - Điều kiện hiến máu của tôi thế nào?
+    """
+    msg = normalize_text(text)
+    compact = ' '.join(msg.split())
+
+    strong_phrases = [
+        'toi co du dieu kien hien mau khong',
+        'co du dieu kien hien mau khong',
+        'du dieu kien hien mau',
+        'du dieu kien khong',
+        'dieu kien hien mau',
+        'hien mau duoc khong',
+        'co hien mau duoc khong',
+        'co duoc hien mau khong',
+        'toi co the hien mau khong',
+        'toi hien mau duoc khong',
+        'kiem tra dieu kien',
+        'kiem tra suc khoe',
+        'eligible',
+        'eligibility',
+    ]
+    if any(p in compact for p in strong_phrases):
+        return True
+
+    # More flexible fallback: contains blood donation + eligibility markers.
+    has_blood = ('hien mau' in compact) or ('donate blood' in compact)
+    has_condition = (
+        ('du dieu kien' in compact)
+        or ('dieu kien' in compact)
+        or ('duoc khong' in compact)
+        or ('co the' in compact)
+        or ('suc khoe' in compact)
+    )
+    return has_blood and has_condition
 
 
 def parse_datetime(value):
@@ -53,13 +104,19 @@ def days_until_eligible(last_donation_date):
 
 
 def get_latest_completed_date(cur, user_id, fallback=None):
-    cur.execute("SELECT MAX(appointment_date) AS last_date FROM appointments WHERE donor_id=? AND status='COMPLETED'", (user_id,))
-    row = cur.fetchone()
+    cur.execute("SELECT MAX(appointment_date) AS last_date FROM appointments WHERE donor_id=%s AND status='COMPLETED'", (user_id,))
+    row = fetchone_dict(cur)
     return (row['last_date'] if row else None) or fallback
 
 
 def intent_from_message(text: str) -> str:
     msg = normalize_text(text)
+
+    # Ưu tiên bắt câu hỏi về điều kiện hiến máu trước mọi intent chung.
+    # Nếu không đặt trước, câu như "Tôi có đủ điều kiện hiến máu không?"
+    # có thể rơi vào GENERAL_HELP ở một số cách diễn đạt.
+    if is_eligibility_question(text):
+        return 'eligibility'
 
     # Quy trình / hướng dẫn chung mà Donor thường hỏi
     if any(k in msg for k in [
@@ -99,10 +156,17 @@ def intent_from_message(text: str) -> str:
     # Câu hỏi dựa trên dữ liệu cá nhân / dữ liệu hospital
     if any(k in msg for k in ['lich hen', 'dat lich', 'appointment', 'trang thai lich', 'hom nay toi co lich']):
         return 'appointment_status'
+    # Eligibility must be checked before broad "khi nào" questions to avoid falling back to general help.
+    if any(k in msg for k in [
+        'du dieu kien', 'dieu kien hien', 'co hien duoc', 'co duoc hien',
+        'toi co du dieu kien', 'toi co hien mau duoc khong', 'hien mau duoc khong',
+        'co du suc khoe', 'screening', 'suc khoe', 'eligible',
+        'toi co du dieu kien hien mau khong', 'toi du dieu kien khong',
+        'co du dieu kien hien mau khong', 'toi co the hien mau khong'
+    ]):
+        return 'eligibility'
     if any(k in msg for k in ['khi nao', 'bao lau', 'hien lai', 'du dieu kien lai', 'countdown']):
         return 'next_donation_date'
-    if any(k in msg for k in ['du dieu kien', 'dieu kien hien', 'co hien duoc', 'screening', 'suc khoe']):
-        return 'eligibility'
     if any(k in msg for k in ['can mau', 'thieu mau', 'emergency', 'khan cap', 'nhom mau nao', 'chien dich']):
         return 'emergency_campaign'
     if any(k in msg for k in ['diem', 'huy hieu', 'achievement', 'cap bac', 'reliability', 'tin cay']):
@@ -115,11 +179,11 @@ def answer_registration_process(cur, user):
     cur.execute("""
         SELECT id, appointment_date, status
         FROM appointments
-        WHERE donor_id=? AND status NOT IN ('COMPLETED','CANCELLED')
+        WHERE donor_id=%s AND status NOT IN ('COMPLETED','CANCELLED')
         ORDER BY appointment_date ASC
         LIMIT 1
     """, (user['id'],))
-    active = cur.fetchone()
+    active = fetchone_dict(cur)
     extra = ""
     if active:
         extra = f"\n\nHiện bạn đã có lịch hẹn {fmt_dt(active['appointment_date'])}, trạng thái {active['status']}. Bạn có thể theo dõi trong mục Appointments."
@@ -196,7 +260,7 @@ def answer_status_explanation():
 
 def answer_hospital_info(cur):
     cur.execute("SELECT name, address, contact_phone, contact_email FROM hospitals WHERE id=1")
-    row = cur.fetchone()
+    row = fetchone_dict(cur)
     if not row:
         return "Hiện hệ thống chưa có thông tin bệnh viện. Bạn có thể liên hệ trực tiếp Hospital Admin."
     return (
@@ -210,19 +274,19 @@ def answer_hospital_info(cur):
 def answer_appointment(cur, user_id):
     cur.execute("""
         SELECT * FROM appointments
-        WHERE donor_id=? AND status NOT IN ('COMPLETED','CANCELLED')
+        WHERE donor_id=%s AND status NOT IN ('COMPLETED','CANCELLED')
         ORDER BY appointment_date ASC
         LIMIT 1
     """, (user_id,))
-    app = cur.fetchone()
+    app = fetchone_dict(cur)
     if not app:
         cur.execute("""
             SELECT * FROM appointments
-            WHERE donor_id=?
+            WHERE donor_id=%s
             ORDER BY appointment_date DESC
             LIMIT 1
         """, (user_id,))
-        app = cur.fetchone()
+        app = fetchone_dict(cur)
     if not app:
         return "Bạn hiện chưa có lịch hẹn hiến máu. Bạn có thể vào mục Appointments để đặt lịch mới."
 
@@ -250,39 +314,71 @@ def answer_next_donation(cur, user):
         return f"Lần hiến gần nhất của bạn là {fmt_dt(last_date)}. Bạn hiện đã đủ thời gian để đăng ký hiến máu lại."
     return (
         f"Lần hiến gần nhất của bạn là {fmt_dt(last_date)}. "
-        f"Theo quy tắc demo của hệ thống, bạn cần chờ đủ {DONATION_INTERVAL_DAYS} ngày. "
+        f"Theo quy định 84 ngày của hệ thống, bạn cần chờ đủ {DONATION_INTERVAL_DAYS} ngày. "
         f"Bạn còn khoảng {remaining} ngày nữa, dự kiến có thể hiến lại từ {next_dt.strftime('%d/%m/%Y')}."
     )
 
 
 def answer_eligibility(cur, user):
-    last_date = get_latest_completed_date(cur, user['id'], user['last_donation_date'])
+    """Answer the question: "Tôi có đủ điều kiện hiến máu không?" using real donor data."""
+    last_date = get_latest_completed_date(cur, user['id'], user.get('last_donation_date'))
     remaining, next_dt = days_until_eligible(last_date)
+
+    weight = user.get('weight')
+    blood_type = user.get('blood_type') or 'UNKNOWN'
+    reasons = []
+
+    if weight is not None:
+        try:
+            if float(weight) < 45:
+                reasons.append(f"cân nặng hiện ghi nhận {weight}kg, thấp hơn mức tối thiểu 45kg trong hệ thống")
+        except Exception:
+            pass
+
+    if remaining > 0:
+        reasons.append(
+            f"chưa đủ {DONATION_INTERVAL_DAYS} ngày từ lần hiến gần nhất; còn khoảng {remaining} ngày nữa"
+        )
+
+    # Check if donor already has an active future appointment.
     cur.execute("""
-        SELECT pre_screening_result, status, appointment_date
+        SELECT appointment_date, status
         FROM appointments
-        WHERE donor_id=?
-        ORDER BY created_at DESC
+        WHERE donor_id=%s
+          AND status IN ('PENDING','APPROVED','CHECKED_IN','IN_PROGRESS')
+        ORDER BY appointment_date ASC
         LIMIT 1
     """, (user['id'],))
-    app = cur.fetchone()
-    if remaining > 0:
-        return (
-            f"Bạn chưa đủ thời gian hiến lại. Còn khoảng {remaining} ngày nữa, "
-            f"dự kiến từ {next_dt.strftime('%d/%m/%Y')}. "
-            "Bạn vẫn nên duy trì sức khỏe tốt và đặt lịch khi đủ điều kiện."
-        )
-    if app and app['pre_screening_result']:
-        return (
-            "Dựa trên dữ liệu sàng lọc gần nhất, bạn không bị hệ thống chặn điều kiện thời gian hiến lại. "
-            f"Thông tin sàng lọc gần nhất: {app['pre_screening_result']}. "
-            "Kết quả cuối cùng vẫn cần nhân viên y tế xác nhận tại bệnh viện."
-        )
-    return (
-        "Bạn hiện không bị giới hạn bởi thời gian hiến lại trong hệ thống. "
-        "Khi đặt lịch, hãy khai báo sàng lọc sức khỏe đầy đủ. Kết quả cuối cùng sẽ được xác nhận tại bệnh viện."
-    )
+    active = fetchone_dict(cur)
 
+    if reasons:
+        next_text = f"\nNgày có thể hiến lại dự kiến: {next_dt.strftime('%d/%m/%Y')}." if next_dt else ""
+        booking_hint = (
+            "\nBạn vẫn có thể đặt lịch trước nếu ngày hẹn được chọn nằm từ ngày đủ điều kiện trở về sau."
+            if next_dt else ""
+        )
+        return (
+            "Theo dữ liệu hiện tại trong hệ thống, bạn CHƯA đủ điều kiện để hiến máu ngay.\n\n"
+            "Lý do:\n- " + "\n- ".join(reasons) +
+            next_text +
+            booking_hint +
+            "\n\nLưu ý: phần này chỉ là sàng lọc sơ bộ; quyết định cuối cùng do nhân viên y tế xác nhận tại bệnh viện."
+        )
+
+    active_text = ""
+    if active:
+        active_text = f"\n\nBạn đang có lịch hẹn {fmt_dt(active['appointment_date'])}, trạng thái {active['status']}."
+
+    return (
+        "Theo dữ liệu hiện tại trong hệ thống, bạn CÓ THỂ đủ điều kiện đặt lịch hiến máu.\n\n"
+        f"- Nhóm máu trong hồ sơ: {blood_type}.\n"
+        f"- Cân nặng trong hồ sơ: {weight if weight is not None else 'chưa cập nhật'}kg.\n"
+        "- Không bị hệ thống chặn bởi quy tắc 84 ngày.\n\n"
+        "Khi đặt lịch, bạn vẫn cần khai báo sàng lọc sức khỏe đầy đủ. "
+        "Các câu hỏi như rượu/bia 24h, ngủ đủ giấc, sốt/cảm... nên được kiểm tra sát ngày hiến máu."
+        + active_text +
+        "\n\nLưu ý: quyết định cuối cùng do nhân viên y tế xác nhận tại bệnh viện."
+    )
 
 def answer_emergency(cur, user):
     cur.execute("""
@@ -291,12 +387,12 @@ def answer_emergency(cur, user):
                  WHEN quantity <= safety_threshold * 0.5 THEN 'CRITICAL'
                  WHEN quantity < safety_threshold THEN 'WARNING'
                  ELSE 'SAFE'
-               END AS level
+               END AS status_level
         FROM blood_inventory
         WHERE hospital_id=1
-        ORDER BY level='CRITICAL' DESC, level='WARNING' DESC, blood_type ASC
+        ORDER BY CASE WHEN status_level='CRITICAL' THEN 1 WHEN status_level='WARNING' THEN 2 ELSE 3 END, blood_type ASC
     """)
-    rows = [dict(r) for r in cur.fetchall()]
+    rows = [dict(r) for r in fetchall_dict(cur)]
     critical = [r for r in rows if r['level'] == 'CRITICAL']
     warning = [r for r in rows if r['level'] == 'WARNING']
     if not critical and not warning:
@@ -336,10 +432,13 @@ def answer_stats(user):
 
 def answer_general():
     return (
-        "Mình có thể hỗ trợ bạn về quy trình hiến máu và dữ liệu cá nhân trong hệ thống. Bạn có thể hỏi: "
-        "'Quy trình đăng ký hiến máu ra sao?', 'Lịch hẹn của tôi khi nào?', "
-        "'Tôi cần chuẩn bị gì trước khi hiến?', 'Khi nào tôi được hiến lại?', "
-        "'Bệnh viện đang cần nhóm máu nào?', hoặc 'Sau khi hiến máu cần lưu ý gì?'."
+        "Mình có thể hỗ trợ bạn về điều kiện hiến máu, lịch hẹn và dữ liệu cá nhân trong hệ thống. Bạn có thể hỏi:\n"
+        "- Tôi có đủ điều kiện hiến máu không?\n"
+        "- Khi nào tôi được hiến lại?\n"
+        "- Lịch hẹn của tôi khi nào?\n"
+        "- Quy trình đăng ký hiến máu ra sao?\n"
+        "- Bệnh viện đang cần nhóm máu nào?\n"
+        "- Tôi cần chuẩn bị gì trước khi hiến máu?"
     )
 
 
@@ -352,10 +451,10 @@ async def ask_chatbot(data: ChatbotAsk, current_user: dict = Depends(get_current
         raise HTTPException(status_code=400, detail='Vui lòng nhập câu hỏi')
 
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = get_cursor(conn)
     try:
-        cur.execute('SELECT * FROM users WHERE id=?', (current_user['id'],))
-        user_row = cur.fetchone()
+        cur.execute('SELECT * FROM users WHERE id=%s', (current_user['id'],))
+        user_row = fetchone_dict(cur)
         if not user_row:
             raise HTTPException(status_code=404, detail='User not found')
         user = dict(user_row)
@@ -390,11 +489,11 @@ async def ask_chatbot(data: ChatbotAsk, current_user: dict = Depends(get_current
 
         try:
             cur.execute(
-                "INSERT INTO chat_messages (user_id, sender, message, intent) VALUES (?, 'USER', ?, ?)",
+                "INSERT INTO chat_messages (user_id, sender, message, intent) VALUES (%s, 'USER', %s, %s)",
                 (user['id'], message, intent)
             )
             cur.execute(
-                "INSERT INTO chat_messages (user_id, sender, message, intent) VALUES (?, 'BOT', ?, ?)",
+                "INSERT INTO chat_messages (user_id, sender, message, intent) VALUES (%s, 'BOT', %s, %s)",
                 (user['id'], answer, intent)
             )
             conn.commit()
@@ -409,17 +508,35 @@ async def ask_chatbot(data: ChatbotAsk, current_user: dict = Depends(get_current
 async def history(current_user: dict = Depends(get_current_user)):
     if current_user['role'] != 'DONOR':
         raise HTTPException(status_code=403, detail='Smart Assistant hiện dành cho Donor')
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     cur.execute("""
         SELECT sender, message, intent, created_at
         FROM chat_messages
-        WHERE user_id=?
+        WHERE user_id=%s
         ORDER BY created_at ASC, id ASC
         LIMIT 80
     """, (current_user['id'],))
-    rows = [dict(r) for r in cur.fetchall()]
+    rows = [dict(r) for r in fetchall_dict(cur)]
+    # Fix old chat history rows that were saved before eligibility intent was improved.
+    # This prevents F5 from showing the old GENERAL_HELP answer under
+    # "Tôi có đủ điều kiện hiến máu không?".
+    cleaned = []
+    previous_user_asked_eligibility = False
+    for row in rows:
+        item = dict(row)
+        if item.get('sender') == 'USER':
+            previous_user_asked_eligibility = is_eligibility_question(item.get('message') or '')
+        elif item.get('sender') == 'BOT':
+            if previous_user_asked_eligibility and item.get('intent') == 'general_help':
+                item['intent'] = 'eligibility'
+                item['message'] = (
+                    "Câu hỏi này cần kiểm tra dữ liệu hồ sơ và lịch sử hiến máu của bạn. "
+                    "Vui lòng bấm lại câu hỏi 'Tôi có đủ điều kiện hiến máu không?' để hệ thống cập nhật kết quả mới nhất."
+                )
+            previous_user_asked_eligibility = False
+        cleaned.append(item)
     conn.close()
-    return rows
+    return cleaned
 
 
 @router.get('/suggestions')

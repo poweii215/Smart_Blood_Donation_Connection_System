@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
 from io import BytesIO
+import os
+import smtplib
+from email.message import EmailMessage
 from xml.sax.saxutils import escape
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -7,8 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from ..database import get_db_connection
+from ..db_helpers import get_cursor, fetchone_dict, fetchall_dict
 from .auth import get_current_user, ADMIN_ROLES
-from ..schemas import RecommendationRequest, RecommendationSettings
+from ..schemas import RecommendationRequest, RecommendationSettings, RecommendationEmailRequest
 
 router = APIRouter()
 
@@ -75,7 +79,7 @@ def normalize_weights(weights):
 
 def get_recommendation_settings(cur):
     cur.execute("SELECT * FROM recommendation_settings WHERE id=1")
-    row = cur.fetchone()
+    row = fetchone_dict(cur)
     if not row:
         return {
             "w_blood": 0.45, "w_eligibility": 0.30, "w_reliability": 0.15, "w_humanitarian": 0.10,
@@ -87,8 +91,8 @@ def get_recommendation_settings(cur):
     return data
 
 def is_blood_type_emergency(cur, blood_type):
-    cur.execute("SELECT quantity, safety_threshold FROM blood_inventory WHERE hospital_id=1 AND blood_type=?", (blood_type,))
-    row = cur.fetchone()
+    cur.execute("SELECT quantity, safety_threshold FROM blood_inventory WHERE hospital_id=1 AND blood_type=%s", (blood_type,))
+    row = fetchone_dict(cur)
     if not row:
         return False
     return float(row["quantity"] or 0) <= float(row["safety_threshold"] or 0) * 0.5
@@ -189,17 +193,17 @@ async def forecast(months: int = 3, current_user: dict = Depends(get_current_use
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Forbidden")
     months = max(1, min(months, 12))
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     since = (datetime.utcnow() - timedelta(days=31 * months)).strftime("%Y-%m-%d")
     cur.execute("""
-        SELECT blood_type, strftime('%Y-%m', created_at) as month, SUM(ABS(quantity)) as used_quantity
+        SELECT blood_type, TO_CHAR(created_at::timestamp, 'YYYY-MM') as month, SUM(ABS(quantity)) as used_quantity
         FROM inventory_transactions
-        WHERE transaction_type = 'OUT' AND created_at >= ?
-        GROUP BY blood_type, strftime('%Y-%m', created_at)
+        WHERE transaction_type = 'OUT' AND created_at >= %s
+        GROUP BY blood_type, TO_CHAR(created_at::timestamp, 'YYYY-MM')
     """, (since,))
-    rows = [dict(r) for r in cur.fetchall()]
+    rows = [dict(r) for r in fetchall_dict(cur)]
     cur.execute("SELECT blood_type, quantity, safety_threshold FROM blood_inventory WHERE hospital_id = 1")
-    inv = [dict(r) for r in cur.fetchall()]
+    inv = [dict(r) for r in fetchall_dict(cur)]
     conn.close()
     results = []
     for item in inv:
@@ -213,25 +217,25 @@ async def forecast(months: int = 3, current_user: dict = Depends(get_current_use
 
 @router.get("/summary")
 async def summary(current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     if is_admin(current_user):
-        cur.execute("SELECT COUNT(*) as c FROM appointments WHERE date(appointment_date) = date('now')")
-        today = cur.fetchone()["c"]
+        cur.execute("SELECT COUNT(*) as c FROM appointments WHERE DATE(appointment_date) = CURRENT_DATE")
+        today = fetchone_dict(cur)["c"]
         cur.execute("SELECT COUNT(*) as c FROM blood_inventory WHERE hospital_id=1 AND quantity < safety_threshold")
-        warning = cur.fetchone()["c"]
+        warning = fetchone_dict(cur)["c"]
         cur.execute("SELECT COUNT(*) as c FROM blood_inventory WHERE hospital_id=1 AND quantity <= safety_threshold * 0.5")
-        emergency = cur.fetchone()["c"]
+        emergency = fetchone_dict(cur)["c"]
         cur.execute("SELECT COUNT(*) as c FROM users WHERE role='DONOR'")
-        donors = cur.fetchone()["c"]
+        donors = fetchone_dict(cur)["c"]
         conn.close()
         return {"today_appointments": today, "warning_blood_types": warning, "emergency_blood_types": emergency, "potential_donors": donors}
 
-    cur.execute("SELECT COUNT(*) as c FROM appointments WHERE donor_id=? AND status='COMPLETED'", (current_user["id"],))
-    total = cur.fetchone()["c"]
-    cur.execute("SELECT MAX(appointment_date) as d FROM appointments WHERE donor_id=? AND status='COMPLETED'", (current_user["id"],))
-    last = cur.fetchone()["d"]
-    cur.execute("SELECT humanitarian_points, reliability_score, total_donations, last_donation_date FROM users WHERE id=?", (current_user["id"],))
-    u = dict(cur.fetchone())
+    cur.execute("SELECT COUNT(*) as c FROM appointments WHERE donor_id=%s AND status='COMPLETED'", (current_user["id"],))
+    total = fetchone_dict(cur)["c"]
+    cur.execute("SELECT MAX(appointment_date) as d FROM appointments WHERE donor_id=%s AND status='COMPLETED'", (current_user["id"],))
+    last = fetchone_dict(cur)["d"]
+    cur.execute("SELECT humanitarian_points, reliability_score, total_donations, last_donation_date FROM users WHERE id=%s", (current_user["id"],))
+    u = dict(fetchone_dict(cur))
     conn.close()
     achievements = achievement_level(u.get("humanitarian_points") or 0, u.get("total_donations") or total)
     return {
@@ -251,7 +255,7 @@ async def export_donors(current_user: dict = Depends(get_current_user)):
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     cur.execute("""
         SELECT
             u.id,
@@ -280,7 +284,7 @@ async def export_donors(current_user: dict = Depends(get_current_user)):
         ORDER BY u.full_name ASC
     """)
     donor_rows = []
-    for r in cur.fetchall():
+    for r in fetchall_dict(cur):
         donor = dict(r)
         ach = achievement_level(donor.get("humanitarian_points") or 0, donor.get("total_donations") or 0)
         donor_rows.append([
@@ -347,10 +351,9 @@ async def export_today_appointments(
         raise HTTPException(status_code=400, detail="Invalid export filter")
 
     statuses = status_groups[status]
-    placeholders = ",".join(["?"] * len(statuses))
 
-    conn = get_db_connection(); cur = conn.cursor()
-    cur.execute(f"""
+    conn = get_db_connection(); cur = get_cursor(conn)
+    cur.execute("""
         SELECT
             a.id,
             a.appointment_date,
@@ -367,8 +370,8 @@ async def export_today_appointments(
             u.total_donations
         FROM appointments a
         JOIN users u ON a.donor_id = u.id
-        WHERE date(a.appointment_date) = date(?)
-          AND a.status IN ({placeholders})
+        WHERE DATE(a.appointment_date) = date(%s)
+          AND a.status = ANY(%s)
         ORDER BY
             CASE a.status
                 WHEN 'CHECKED_IN' THEN 1
@@ -380,7 +383,7 @@ async def export_today_appointments(
                 ELSE 7
             END,
             a.appointment_date ASC
-    """, [selected_date] + statuses)
+    """, [selected_date, statuses])
     rows = []
     status_counts = {
         "PENDING": 0,
@@ -390,7 +393,7 @@ async def export_today_appointments(
         "COMPLETED": 0,
         "CANCELLED": 0,
     }
-    for r in cur.fetchall():
+    for r in fetchall_dict(cur):
         item = dict(r)
         row_status = item.get("status") or ""
         if row_status in status_counts:
@@ -453,11 +456,72 @@ async def export_today_appointments(
     )
 
 
+def send_recommendation_email(email_to: str, subject: str, message: str) -> tuple[str, str | None, str]:
+    """Send email in mock mode by default, or through SMTP when configured.
+
+    EMAIL_MODE=mock keeps the feature safe for demo: the message is logged in DB but not sent externally.
+    EMAIL_MODE=smtp sends real email using SMTP_HOST/SMTP_PORT/SMTP_USERNAME/SMTP_PASSWORD/SMTP_FROM.
+    """
+    mode = os.getenv("EMAIL_MODE", "mock").lower().strip()
+    if not email_to:
+        return "SKIPPED", "Donor has no email address", mode
+
+    if mode != "smtp":
+        return "MOCK_SENT", None, "mock"
+
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USERNAME")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    smtp_from = os.getenv("SMTP_FROM") or smtp_user
+    use_tls = os.getenv("SMTP_USE_TLS", "true").lower() != "false"
+
+    if not smtp_host or not smtp_from:
+        return "FAILED", "SMTP_HOST and SMTP_FROM/SMTP_USERNAME are required", "smtp"
+
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = smtp_from
+        msg["To"] = email_to
+        msg.set_content(message)
+        msg.add_alternative(f"""
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
+          <h2 style="color:#dc2626">SBDCs - Blood Donation Invitation</h2>
+          <p>{message.replace(chr(10), '<br/>')}</p>
+        </div>
+        """, subtype="html")
+
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+            if use_tls:
+                server.starttls()
+            if smtp_user and smtp_password:
+                server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        return "SENT", None, "smtp"
+    except Exception as exc:
+        return "FAILED", str(exc), "smtp"
+
+
+def default_invitation_message(donor_name: str, blood_type: str, score: float, reason: str) -> tuple[str, str]:
+    subject = f"Lời mời hiến máu nhóm {blood_type} từ SBDCs"
+    message = (
+        f"Xin chào {donor_name},\n\n"
+        f"Bệnh viện hiện đang cần hỗ trợ nhóm máu {blood_type}. "
+        f"Bạn được hệ thống khuyến nghị vì hồ sơ của bạn phù hợp với nhu cầu hiện tại.\n\n"
+        f"Điểm phù hợp của bạn: {round(score * 100)}%.\n"
+        f"Lý do: {reason}\n\n"
+        "Nếu bạn có thể tham gia, vui lòng đăng nhập vào hệ thống SBDCs để đặt lịch hiến máu.\n\n"
+        "Cảm ơn bạn vì nghĩa cử nhân đạo này."
+    )
+    return subject, message
+
+
 @router.get("/recommendation-settings")
 async def recommendation_settings(current_user: dict = Depends(get_current_user)):
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Forbidden")
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     settings = get_recommendation_settings(cur)
     conn.close()
     return settings
@@ -481,13 +545,13 @@ async def update_recommendation_settings(data: RecommendationSettings, current_u
         "emergency_w_humanitarian": data.emergency_w_humanitarian,
     })
 
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     cur.execute("""
         INSERT INTO recommendation_settings (
             id, w_blood, w_eligibility, w_reliability, w_humanitarian,
             emergency_w_blood, emergency_w_eligibility, emergency_w_reliability, emergency_w_humanitarian,
             emergency_auto_adjust, updated_at
-        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             w_blood=excluded.w_blood,
             w_eligibility=excluded.w_eligibility,
@@ -514,7 +578,7 @@ async def update_recommendation_settings(data: RecommendationSettings, current_u
 async def recommendations(data: RecommendationRequest, current_user: dict = Depends(get_current_user)):
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Forbidden")
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     settings = get_recommendation_settings(cur)
     emergency_mode = settings.get("emergency_auto_adjust") and is_blood_type_emergency(cur, data.blood_type)
 
@@ -534,15 +598,14 @@ async def recommendations(data: RecommendationRequest, current_user: dict = Depe
         }
     weights = normalize_weights(weights)
 
-    compatible = COMPATIBLE.get(data.blood_type, {data.blood_type})
-    placeholders = ','.join('?' for _ in compatible)
-    cur.execute(f"""
-        SELECT id, full_name, phone, blood_type, reliability_score, humanitarian_points, total_donations, last_donation_date
+    compatible = list(COMPATIBLE.get(data.blood_type, {data.blood_type}))
+    cur.execute("""
+        SELECT id, full_name, phone, email, blood_type, reliability_score, humanitarian_points, total_donations, last_donation_date
         FROM users
-        WHERE role='DONOR' AND blood_type IN ({placeholders})
-    """, tuple(compatible))
+        WHERE role='DONOR' AND blood_type = ANY(%s)
+    """, (compatible,))
     donors = []
-    for r in cur.fetchall():
+    for r in fetchall_dict(cur):
         donor = dict(r)
         blood_score = 1.0 if donor["blood_type"] == data.blood_type else 0.8
         elig = eligibility_score(donor["last_donation_date"])
@@ -571,9 +634,12 @@ async def recommendations(data: RecommendationRequest, current_user: dict = Depe
     top = donors[:data.top_n]
     for d in top:
         cur.execute("""
-            INSERT INTO recommendation_results (hospital_id, blood_type, user_id, score, invitation_status)
-            VALUES (1, ?, ?, ?, 'SENT')
+            INSERT INTO recommendation_results (hospital_id, blood_type, user_id, score, invitation_status, email_status)
+            VALUES (1, %s, %s, %s, 'NO_RESPONSE', 'NOT_SENT')
+            RETURNING id
         """, (data.blood_type, d["id"], d["score"]))
+        d["recommendation_result_id"] = fetchone_dict(cur)["id"]
+        d["email_status"] = "NOT_SENT"
     conn.commit(); conn.close()
     return {
         "blood_type": data.blood_type,
@@ -589,35 +655,130 @@ async def recommendations(data: RecommendationRequest, current_user: dict = Depe
         "items": top
     }
 
+
+@router.post("/recommendations/send-emails")
+async def send_recommendation_emails(data: RecommendationEmailRequest, current_user: dict = Depends(get_current_user)):
+    """Send targeted invitation emails only to selected recommendation results.
+
+    Anti-spam rules:
+    - same recommendation result cannot be sent twice;
+    - same donor + blood type cannot receive another recommendation email within 24 hours.
+    """
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not data.recommendation_result_ids:
+        raise HTTPException(status_code=400, detail="No donors selected")
+
+    conn = get_db_connection(); cur = get_cursor(conn)
+
+    cur.execute(f"""
+        SELECT rr.id AS result_id, rr.blood_type, rr.score, rr.email_status, rr.email_sent_at,
+               u.id AS user_id, u.full_name, u.email, u.phone, u.blood_type AS donor_blood_type,
+               u.reliability_score, u.humanitarian_points, u.total_donations
+        FROM recommendation_results rr
+        JOIN users u ON u.id = rr.user_id
+        WHERE rr.id = ANY(%s)
+    """, (list(data.recommendation_result_ids),))
+    rows = [dict(r) for r in fetchall_dict(cur)]
+    found_ids = {r["result_id"] for r in rows}
+    missing = [rid for rid in data.recommendation_result_ids if rid not in found_ids]
+
+    results = []
+    for r in rows:
+        result_id = r["result_id"]
+        donor_id = r["user_id"]
+        blood_type = r["blood_type"]
+        email_to = r.get("email")
+        reason = (
+            f"Nhóm máu {r.get('donor_blood_type')}, độ tin cậy {round(r.get('reliability_score') or 0)}%, "
+            f"điểm nhân đạo {r.get('humanitarian_points') or 0}."
+        )
+        subject, message = default_invitation_message(r.get("full_name") or "Donor", blood_type, r.get("score") or 0, reason)
+        subject = data.subject or subject
+        message = data.message or message
+
+        if r.get("email_status") in {"SENT", "MOCK_SENT"}:
+            status, error, provider = "SKIPPED", "This recommendation email has already been sent", "system"
+        else:
+            cur.execute("""
+                SELECT id, created_at FROM email_logs
+                WHERE user_id=%s AND blood_type=%s AND status IN ('SENT','MOCK_SENT')
+                  AND created_at >= NOW() - INTERVAL '24 hours'
+                ORDER BY created_at DESC LIMIT 1
+            """, (donor_id, blood_type))
+            recent = fetchone_dict(cur)
+            if recent:
+                status, error, provider = "SKIPPED", "Anti-spam: donor already received this blood-type invitation within 24 hours", "system"
+            else:
+                status, error, provider = send_recommendation_email(email_to, subject, message)
+
+        cur.execute("""
+            INSERT INTO email_logs (recommendation_result_id, user_id, blood_type, email_to, subject, message, status, provider, error)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (result_id, donor_id, blood_type, email_to, subject, message, status, provider, error))
+
+        if status in {"SENT", "MOCK_SENT"}:
+            cur.execute("""
+                UPDATE recommendation_results
+                SET email_status=%s, email_sent_at=CURRENT_TIMESTAMP, email_error=NULL, invitation_status='SENT'
+                WHERE id=%s
+            """, (status, result_id))
+        else:
+            cur.execute("""
+                UPDATE recommendation_results
+                SET email_status=%s, email_error=%s
+                WHERE id=%s
+            """, (status, error, result_id))
+
+        results.append({
+            "recommendation_result_id": result_id,
+            "user_id": donor_id,
+            "donor_name": r.get("full_name"),
+            "email": email_to,
+            "blood_type": blood_type,
+            "status": status,
+            "provider": provider,
+            "error": error,
+        })
+
+    conn.commit(); conn.close()
+    return {
+        "requested": len(data.recommendation_result_ids),
+        "processed": len(results),
+        "missing_result_ids": missing,
+        "mode": os.getenv("EMAIL_MODE", "mock"),
+        "results": results,
+    }
+
 @router.get("/notifications")
 async def notifications(current_user: dict = Depends(get_current_user)):
     """Role-aware notification center generated from live system data."""
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     now = datetime.utcnow()
     items = []
     try:
         if is_admin(current_user):
             cur.execute("SELECT blood_type, quantity, safety_threshold FROM blood_inventory WHERE hospital_id=1 ORDER BY quantity ASC")
-            for row in cur.fetchall():
+            for row in fetchall_dict(cur):
                 q = float(row["quantity"] or 0); th = float(row["safety_threshold"] or 0)
                 if q <= th * 0.5:
-                    items.append({"type":"EMERGENCY", "priority":"HIGH", "title":f"Khẩn cấp thiếu máu {row['blood_type']}", "message":f"Nhóm máu {row['blood_type']} chỉ còn {q:.1f} đơn vị, dưới 50% ngưỡng an toàn.", "created_at":now.isoformat()})
+                    items.append({"type":"EMERGENCY", "priority":"HIGH", "title":f"Khẩn cấp thiếu máu {row['blood_type']}", "message":f"Nhóm máu {row['blood_type']} chỉ còn {q:.1f} đơn vị, dưới 50% ngưỡng an toàn.", "created_at":"inventory-state"})
                 elif q < th:
-                    items.append({"type":"LOW_STOCK", "priority":"MEDIUM", "title":f"Kho máu {row['blood_type']} đang thấp", "message":f"Tồn kho {q:.1f}/{th:.1f} đơn vị. Nên xem danh sách donor phù hợp.", "created_at":now.isoformat()})
+                    items.append({"type":"LOW_STOCK", "priority":"MEDIUM", "title":f"Kho máu {row['blood_type']} đang thấp", "message":f"Tồn kho {q:.1f}/{th:.1f} đơn vị. Nên xem danh sách donor phù hợp.", "created_at":"inventory-state"})
             cur.execute("""
                 SELECT COUNT(*) as c FROM appointments
-                WHERE date(appointment_date)=date('now') AND status IN ('PENDING','APPROVED','CHECKED_IN','IN_PROGRESS')
+                WHERE DATE(appointment_date)=CURRENT_DATE AND status IN ('PENDING','APPROVED','CHECKED_IN','IN_PROGRESS')
             """)
-            today = cur.fetchone()["c"]
+            today = fetchone_dict(cur)["c"]
             if today:
-                items.append({"type":"TODAY_APPOINTMENTS", "priority":"INFO", "title":"Lịch hẹn hôm nay", "message":f"Có {today} lịch hẹn cần theo dõi trong hôm nay.", "created_at":now.isoformat()})
+                items.append({"type":"TODAY_APPOINTMENTS", "priority":"INFO", "title":"Lịch hẹn hôm nay", "message":f"Có {today} lịch hẹn cần theo dõi trong hôm nay.", "created_at":"inventory-state"})
         else:
             user_id = current_user["id"]
             cur.execute("""
-                SELECT * FROM appointments WHERE donor_id=?
+                SELECT * FROM appointments WHERE donor_id=%s
                 ORDER BY appointment_date DESC LIMIT 5
             """, (user_id,))
-            appointments = [dict(r) for r in cur.fetchall()]
+            appointments = [dict(r) for r in fetchall_dict(cur)]
             upcoming = None
             for a in appointments:
                 try:
@@ -630,19 +791,22 @@ async def notifications(current_user: dict = Depends(get_current_user)):
             if approved:
                 items.append({"type":"APPOINTMENT_APPROVED", "priority":"HIGH", "title":"Lịch hẹn đã được duyệt", "message":f"Lịch hẹn ngày {approved.get('appointment_date')} đã được Hospital duyệt.", "created_at":approved.get("updated_at") or now.isoformat()})
             if upcoming:
-                items.append({"type":"UPCOMING_APPOINTMENT", "priority":"INFO", "title":"Bạn có lịch hẹn sắp tới", "message":f"Lịch hiến máu của bạn: {upcoming.get('appointment_date')} - trạng thái {upcoming.get('status')}.", "created_at":now.isoformat()})
-            cur.execute("SELECT last_donation_date, blood_type FROM users WHERE id=?", (user_id,))
-            u = dict(cur.fetchone())
-            days = days_until_eligible(u.get("last_donation_date"))
+                items.append({"type":"UPCOMING_APPOINTMENT", "priority":"INFO", "title":"Bạn có lịch hẹn sắp tới", "message":f"Lịch hiến máu của bạn: {upcoming.get('appointment_date')} - trạng thái {upcoming.get('status')}.", "created_at":"inventory-state"})
+            cur.execute("SELECT last_donation_date, blood_type FROM users WHERE id=%s", (user_id,))
+            u = dict(fetchone_dict(cur))
+            cur.execute("SELECT MAX(appointment_date) AS last_completed FROM appointments WHERE donor_id=%s AND status='COMPLETED'", (user_id,))
+            last_row = fetchone_dict(cur)
+            last_completed = (last_row["last_completed"] if last_row else None) or u.get("last_donation_date")
+            days = days_until_eligible(last_completed)
             if days == 0:
-                items.append({"type":"ELIGIBLE_AGAIN", "priority":"SUCCESS", "title":"Bạn đã đủ điều kiện hiến lại", "message":"Bạn có thể đặt lịch hiến máu tiếp theo nếu sức khỏe ổn định.", "created_at":now.isoformat()})
+                items.append({"type":"ELIGIBLE_AGAIN", "priority":"SUCCESS", "title":"Bạn đã đủ điều kiện hiến lại", "message":"Bạn có thể đặt lịch hiến máu tiếp theo nếu sức khỏe ổn định.", "created_at":"inventory-state"})
             else:
-                items.append({"type":"RECOVERY", "priority":"INFO", "title":"Đang trong thời gian phục hồi", "message":f"Bạn còn {days} ngày nữa để đủ điều kiện hiến máu tiếp theo.", "created_at":now.isoformat()})
+                items.append({"type":"RECOVERY", "priority":"INFO", "title":"Đang trong thời gian phục hồi", "message":f"Bạn còn {days} ngày nữa để đủ điều kiện hiến máu tiếp theo.", "created_at":"inventory-state"})
             cur.execute("SELECT blood_type, quantity, safety_threshold FROM blood_inventory WHERE hospital_id=1 AND quantity <= safety_threshold ORDER BY quantity ASC LIMIT 3")
-            needs = [dict(r) for r in cur.fetchall()]
+            needs = [dict(r) for r in fetchall_dict(cur)]
             if needs:
                 bloods = ', '.join(r['blood_type'] for r in needs)
-                items.append({"type":"EMERGENCY_CAMPAIGN", "priority":"HIGH", "title":"Bệnh viện đang cần máu", "message":f"Các nhóm máu đang thiếu: {bloods}. Nếu phù hợp và đủ điều kiện, bạn có thể đặt lịch hỗ trợ.", "created_at":now.isoformat()})
+                items.append({"type":"EMERGENCY_CAMPAIGN", "priority":"HIGH", "title":"Bệnh viện đang cần máu", "message":f"Các nhóm máu đang thiếu: {bloods}. Nếu phù hợp và đủ điều kiện, bạn có thể đặt lịch hỗ trợ.", "created_at":"inventory-state"})
         return {"items": items[:10], "unread_count": len(items[:10])}
     finally:
         conn.close()
@@ -653,35 +817,35 @@ async def hospital_analytics(current_user: dict = Depends(get_current_user)):
     """Better hospital analytics for dashboard/reporting."""
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Forbidden")
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection(); cur = get_cursor(conn)
     try:
         cur.execute("""
-            SELECT strftime('%Y-%m', appointment_date) AS month, COUNT(*) AS total,
+            SELECT TO_CHAR(appointment_date::timestamp, 'YYYY-MM') AS month, COUNT(*) AS total,
                    SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS completed
             FROM appointments
-            WHERE appointment_date >= date('now','-11 months')
-            GROUP BY strftime('%Y-%m', appointment_date)
+            WHERE appointment_date::date >= (CURRENT_DATE - INTERVAL '11 months')
+            GROUP BY TO_CHAR(appointment_date::timestamp, 'YYYY-MM')
             ORDER BY month
         """)
-        monthly = [dict(r) for r in cur.fetchall()]
+        monthly = [dict(r) for r in fetchall_dict(cur)]
         cur.execute("""
             SELECT blood_type, quantity, safety_threshold,
-                   CASE WHEN safety_threshold > 0 THEN ROUND(quantity * 1.0 / safety_threshold, 2) ELSE 999 END AS stock_ratio
+                   CASE WHEN safety_threshold > 0 THEN ROUND((quantity * 1.0 / safety_threshold)::numeric, 2) ELSE 999 END AS stock_ratio
             FROM blood_inventory
             WHERE hospital_id=1
             ORDER BY stock_ratio ASC, quantity ASC
         """)
-        needed = [dict(r) for r in cur.fetchall()]
+        needed = [dict(r) for r in fetchall_dict(cur)]
         cur.execute("SELECT COUNT(*) as c FROM users WHERE role='DONOR'")
-        total_donors = cur.fetchone()["c"] or 0
+        total_donors = fetchone_dict(cur)["c"] or 0
         cur.execute("SELECT COUNT(DISTINCT donor_id) as c FROM appointments WHERE status='COMPLETED'")
-        retained = cur.fetchone()["c"] or 0
+        retained = fetchone_dict(cur)["c"] or 0
         cur.execute("SELECT COUNT(*) as total, SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) as completed FROM appointments")
-        row = dict(cur.fetchone())
+        row = dict(fetchone_dict(cur))
         total_apps = row.get("total") or 0
         completed_apps = row.get("completed") or 0
         cur.execute("SELECT COUNT(*) as c FROM blood_inventory WHERE hospital_id=1 AND quantity <= safety_threshold * 0.5")
-        emergency_count = cur.fetchone()["c"] or 0
+        emergency_count = fetchone_dict(cur)["c"] or 0
         return {
             "monthly_donations": monthly,
             "most_needed_blood_types": needed[:5],

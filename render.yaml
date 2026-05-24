@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: sbdcs-backend
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sbdcs-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: EMAIL_MODE
+        value: mock
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+databases:
+  - name: sbdcs-db
+    plan: free
+    databaseName: sbdcs
+    user: sbdcs_user

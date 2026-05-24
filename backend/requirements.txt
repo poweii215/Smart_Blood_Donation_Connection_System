@@ -5,3 +5,4 @@ pydantic
 pydantic-settings
 python-multipart
 bcrypt==4.0.1
+psycopg2-binary

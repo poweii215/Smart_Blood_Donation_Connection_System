@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from ..database import get_db_connection
+from ..db_helpers import get_cursor, fetchone_dict, fetchall_dict
 from ..core.security import decode_token, create_access_token, verify_password, get_password_hash
 from ..schemas import UserLogin, UserCreate, Token, UserUpdate
 
@@ -33,22 +34,49 @@ async def get_current_user(auth: HTTPAuthorizationCredentials = Depends(security
 @router.post("/register")
 async def register(user: UserCreate):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     try:
         phone = normalize_phone(user.phone)
         if len(phone) < 9:
             raise HTTPException(status_code=400, detail="Số điện thoại không hợp lệ")
         role = user.role.value if hasattr(user.role, 'value') else user.role
+        if role == "HOSPITAL_ADMIN":
+            raise HTTPException(status_code=403, detail="Tài khoản Hospital Admin do bệnh viện/hệ thống cấp. Vui lòng đăng nhập bằng tài khoản đã được cấp.")
         password_hash = get_password_hash(user.password) if user.password else 'phone-login'
         cursor.execute(
             """
-            INSERT INTO users (phone, email, password, full_name, role, blood_type)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (
+                phone, email, password, full_name, role, blood_type,
+                birth_date, gender, citizen_id, weight, height, address, occupation
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
-            (phone, user.email, password_hash, user.full_name or "New Donor", role, user.blood_type or "UNKNOWN")
+            (
+                phone, user.email, password_hash, user.full_name or user.hospital_name or "New Donor",
+                role, user.blood_type or "UNKNOWN", user.birth_date, user.gender, user.citizen_id,
+                user.weight, user.height, user.address, user.occupation
+            )
         )
+        new_user_id = fetchone_dict(cursor)["id"]
+        if role == "HOSPITAL_ADMIN":
+            cursor.execute(
+                """
+                UPDATE hospitals
+                SET name = %s, address = %s, contact_phone = %s, contact_email = %s,
+                    hospital_code = %s, city = %s, district = %s, contact_name = %s, contact_title = %s,
+                    contact_person_phone = %s, contact_person_email = %s, status = 'ACTIVE'
+                WHERE id = 1
+                """,
+                (
+                    user.hospital_name or user.full_name or "Central Blood Donation Hospital",
+                    user.address or "Thông tin cập nhật bởi bệnh viện trong phần cài đặt", phone, user.email,
+                    user.hospital_code, user.city, user.district, user.contact_name, user.contact_title,
+                    user.contact_phone, user.contact_email
+                )
+            )
         conn.commit()
-        return {"id": cursor.lastrowid, "message": "Registered successfully"}
+        return {"id": new_user_id, "message": "Registered successfully"}
     except HTTPException:
         raise
     except Exception as e:
@@ -90,7 +118,7 @@ async def login(credentials: UserLogin):
     """
     login_type = (credentials.login_type or "DONOR").upper()
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     try:
         if login_type == "HOSPITAL_ADMIN":
             identifier = (credentials.identifier or credentials.phone or "").strip()
@@ -100,10 +128,10 @@ async def login(credentials: UserLogin):
 
             normalized_phone = normalize_phone(identifier)
             if "@" in identifier:
-                cursor.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND role = 'HOSPITAL_ADMIN'", (identifier,))
+                cursor.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(%s) AND role = 'HOSPITAL_ADMIN'", (identifier,))
             else:
-                cursor.execute("SELECT * FROM users WHERE phone = ? AND role = 'HOSPITAL_ADMIN'", (normalized_phone,))
-            user = cursor.fetchone()
+                cursor.execute("SELECT * FROM users WHERE phone = %s AND role = 'HOSPITAL_ADMIN'", (normalized_phone,))
+            user = fetchone_dict(cursor)
             if not user:
                 raise HTTPException(status_code=401, detail="Không tìm thấy tài khoản Hospital")
             if not verify_password(password, user["password"]):
@@ -115,20 +143,20 @@ async def login(credentials: UserLogin):
         if len(phone) < 9:
             raise HTTPException(status_code=400, detail="Số điện thoại không hợp lệ")
 
-        cursor.execute("SELECT * FROM users WHERE phone = ?", (phone,))
-        user = cursor.fetchone()
+        cursor.execute("SELECT * FROM users WHERE phone = %s", (phone,))
+        user = fetchone_dict(cursor)
         if user and user["role"] == "HOSPITAL_ADMIN":
             raise HTTPException(status_code=400, detail="Tài khoản Hospital phải đăng nhập bằng mật khẩu")
 
         if not user:
             full_name = f"Donor {phone[-4:]}"
             cursor.execute(
-                "INSERT INTO users (phone, password, full_name, role, blood_type) VALUES (?, 'phone-login', ?, 'DONOR', 'UNKNOWN')",
+                "INSERT INTO users (phone, password, full_name, role, blood_type) VALUES (%s, 'phone-login', %s, 'DONOR', 'UNKNOWN') RETURNING id",
                 (phone, full_name)
             )
             conn.commit()
-            cursor.execute("SELECT * FROM users WHERE phone = ?", (phone,))
-            user = cursor.fetchone()
+            cursor.execute("SELECT * FROM users WHERE phone = %s", (phone,))
+            user = fetchone_dict(cursor)
 
         return build_token_for_user(user)
     except HTTPException:
@@ -176,12 +204,12 @@ async def upload_avatar(file: UploadFile = File(...), current_user: dict = Depen
 
     avatar_url = f"/uploads/avatars/{safe_name}"
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     try:
-        cursor.execute("UPDATE users SET avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (avatar_url, current_user["id"]))
+        cursor.execute("UPDATE users SET avatar_url = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (avatar_url, current_user["id"]))
         conn.commit()
-        cursor.execute("SELECT * FROM users WHERE id = ?", (current_user["id"],))
-        user = cursor.fetchone()
+        cursor.execute("SELECT * FROM users WHERE id = %s", (current_user["id"],))
+        user = fetchone_dict(cursor)
         return {"message": "Avatar updated", "avatar_url": avatar_url, "user": public_user(user)}
     except Exception as e:
         conn.rollback()
@@ -190,23 +218,86 @@ async def upload_avatar(file: UploadFile = File(...), current_user: dict = Depen
         conn.close()
 
 
+@router.get("/profile")
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    conn = get_db_connection()
+    cursor = get_cursor(conn)
+    try:
+        cursor.execute("SELECT * FROM users WHERE id = %s", (current_user["id"],))
+        user = fetchone_dict(cursor)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        result = {"user": public_user(user)}
+        if current_user.get("role") == "HOSPITAL_ADMIN":
+            cursor.execute("SELECT * FROM hospitals WHERE id = 1")
+            hospital = fetchone_dict(cursor)
+            result["hospital"] = dict(hospital) if hospital else None
+        return result
+    finally:
+        conn.close()
+
+
 @router.patch("/profile")
 async def update_profile(data: UserUpdate, current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     try:
         update_data = data.dict(exclude_unset=True)
-        if "phone" in update_data and update_data["phone"]:
-            update_data["phone"] = normalize_phone(update_data["phone"])
-        if not update_data:
+        user_keys = {
+            "full_name", "phone", "email", "blood_type", "birth_date", "gender",
+            "citizen_id", "weight", "height", "address", "occupation"
+        }
+        hospital_keys = {
+            "hospital_name", "hospital_code", "city", "district", "contact_name",
+            "contact_title", "contact_phone", "contact_email"
+        }
+        user_update = {k: v for k, v in update_data.items() if k in user_keys}
+        hospital_update = {k: v for k, v in update_data.items() if k in hospital_keys}
+        if current_user.get("role") == "HOSPITAL_ADMIN" and "address" in update_data:
+            hospital_update["address"] = update_data["address"]
+        if "phone" in user_update and user_update["phone"]:
+            user_update["phone"] = normalize_phone(user_update["phone"])
+        if user_update:
+            fields = [f"{key} = %s" for key in user_update.keys()]
+            values = list(user_update.values()) + [current_user["id"]]
+            cursor.execute(f"UPDATE users SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s", tuple(values))
+        if current_user.get("role") == "HOSPITAL_ADMIN" and hospital_update:
+            # Keep hospital profile in the single hospital record.
+            column_map = {
+                "hospital_name": "name",
+                "address": "address",
+                "hospital_code": "hospital_code",
+                "city": "city",
+                "district": "district",
+                "contact_name": "contact_name",
+                "contact_title": "contact_title",
+                "contact_phone": "contact_person_phone",
+                "contact_email": "contact_person_email",
+            }
+            if "contact_phone" in hospital_update:
+                hospital_update["contact_phone"] = normalize_phone(hospital_update["contact_phone"])
+            if "phone" in user_update:
+                hospital_update.setdefault("contact_phone", user_update["phone"])
+            if "email" in user_update:
+                hospital_update.setdefault("contact_email", user_update["email"])
+            assignments = []
+            values = []
+            for key, value in hospital_update.items():
+                assignments.append(f"{column_map[key]} = %s")
+                values.append(value)
+            if assignments:
+                cursor.execute(f"UPDATE hospitals SET {', '.join(assignments)} WHERE id = 1", tuple(values))
+        if not user_update and not hospital_update:
             return {"message": "No changes provided"}
-        fields = [f"{key} = ?" for key in update_data.keys()]
-        values = list(update_data.values()) + [current_user["id"]]
-        cursor.execute(f"UPDATE users SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = ?", tuple(values))
         conn.commit()
-        cursor.execute("SELECT * FROM users WHERE id = ?", (current_user["id"],))
-        user = cursor.fetchone()
-        return {"message": "Profile updated", "user": public_user(user)}
+        cursor.execute("SELECT * FROM users WHERE id = %s", (current_user["id"],))
+        user = fetchone_dict(cursor)
+        result = {"message": "Profile updated", "user": public_user(user)}
+        if current_user.get("role") == "HOSPITAL_ADMIN":
+            cursor.execute("SELECT * FROM hospitals WHERE id = 1")
+            hospital = fetchone_dict(cursor)
+            result["hospital"] = dict(hospital) if hospital else None
+        return result
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -223,18 +314,23 @@ def _require_hospital_admin(current_user: dict):
 async def get_homepage_media():
     """Public homepage media used by the landing page."""
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     try:
         cursor.execute("SELECT * FROM homepage_media WHERE id = 1")
-        row = cursor.fetchone()
+        row = fetchone_dict(cursor)
         if not row:
             return {
                 "hospital_image_url": "/images/hospital-showcase.svg",
                 "donor_activity_image_url": "/images/donor-activity.svg",
-                "hospital_title": "Central Blood Hospital",
-                "hospital_subtitle": "Luôn sẵn sàng tiếp nhận người hiến máu",
+                "hospital_title": "Central Blood Donation Hospital",
+                "hospital_subtitle": "SBDCs - Kết nối hiến máu nhân đạo",
             }
-        return dict(row)
+        media = dict(row)
+        legacy_title = media.get("hospital_title") or ""
+        if "Chợ Rẫy" in legacy_title or "Choray" in legacy_title or legacy_title == "Central Blood Hospital":
+            media["hospital_title"] = "Central Blood Donation Hospital"
+            media["hospital_subtitle"] = "SBDCs - Kết nối hiến máu nhân đạo"
+        return media
     finally:
         conn.close()
 
@@ -275,19 +371,20 @@ async def upload_homepage_media(media_type: str, file: UploadFile = File(...), c
     column = "hospital_image_url" if media_type == "hospital" else "donor_activity_image_url"
 
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = get_cursor(conn)
     try:
         cursor.execute("""
-            INSERT OR IGNORE INTO homepage_media (id, hospital_image_url, donor_activity_image_url, hospital_title, hospital_subtitle)
-            VALUES (1, '/images/hospital-showcase.svg', '/images/donor-activity.svg', 'Central Blood Hospital', 'Luôn sẵn sàng tiếp nhận người hiến máu')
+            INSERT INTO homepage_media (id, hospital_image_url, donor_activity_image_url, hospital_title, hospital_subtitle)
+            VALUES (1, '/images/hospital-showcase.svg', '/images/donor-activity.svg', 'Central Blood Donation Hospital', 'SBDCs - Kết nối hiến máu nhân đạo')
+            ON CONFLICT (id) DO NOTHING
         """)
         cursor.execute(
-            f"UPDATE homepage_media SET {column} = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+            f"UPDATE homepage_media SET {column} = %s, updated_by = %s, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
             (media_url, current_user["id"])
         )
         conn.commit()
         cursor.execute("SELECT * FROM homepage_media WHERE id = 1")
-        return {"message": "Homepage media updated", "media_url": media_url, "homepage_media": dict(cursor.fetchone())}
+        return {"message": "Homepage media updated", "media_url": media_url, "homepage_media": dict(fetchone_dict(cursor))}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))

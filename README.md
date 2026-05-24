@@ -1,64 +1,127 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SBDCs — Single Hospital Blood Donation System
 
-# Run and deploy your AI Studio app
+Phiên bản hoàn chỉnh đã kiểm tra lại cấu trúc project, build frontend và compile backend.
 
-This contains everything you need to run your app locally.
+## 1. Điểm đã hoàn thiện
 
-View your app in AI Studio: https://ai.studio/apps/aa781c78-41b2-4e1f-9853-593fc1f17ad8
+### Donor
+- Đăng nhập nhanh bằng số điện thoại.
+- Dashboard người hiến máu.
+- Đặt lịch hiến máu.
+- Theo dõi trạng thái lịch hẹn.
+- Donor Journey: Registered → Approved → Checked In → Donated → Recovery → Eligible Again.
+- Smart Assistant trả lời FAQ và dữ liệu thật của hospital.
+- Notification Center.
+- Congratulations screen sau khi hiến xong.
+- Settings riêng cho Donor: thông tin cá nhân, avatar, thông báo, tùy chọn hiến máu, giao diện sáng/tối, ngôn ngữ.
 
-## Run Locally
+### Hospital
+- Đăng nhập bằng email/số điện thoại + mật khẩu đã mã hóa.
+- Dashboard quản trị.
+- Quản lý kho máu.
+- Emergency Mode.
+- Recommendation Engine với adaptive weighting.
+- Reports/Export Excel có lọc loại danh sách.
+- Analytics: monthly donation, most needed blood types, donor retention, appointment completion rate.
+- Notification Center.
+- Settings riêng cho Hospital: thông tin tài khoản, ảnh trang chủ, cảnh báo kho máu, trọng số recommendation, export preferences, giao diện sáng/tối, ngôn ngữ.
 
-**Prerequisites:**  Node.js
+## 2. Tài khoản demo
 
+### Donor
+```text
+0900000002
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Hospital
+```text
+Email: hospital@sbdcs.com
+Phone: 0900000001
+Password: Admin@123
+```
 
-## Update: Phone Login + Blood Donation Core Features
+## 3. Yêu cầu môi trường
 
-### Authentication
-- Login now uses `phone only` instead of `email + password`.
-- Registration requires `phone`, `full_name`, `password`, `role`, and optional `email`.
-- Supported roles: `DONOR` and `HOSPITAL_ADMIN` only. The UI has two main modes: Donor and Hospital.
-- Demo accounts after database initialization:
-  - Hospital: `0900000001`
-  - Donor: `0900000002`
+Khuyến nghị:
+- Python 3.10+
+- Node.js LTS 20 hoặc 22
+- Không khuyến nghị Node 24 vì có thể gây lỗi npm `Exit handler never called`.
 
-### Added/Extended Backend Features
-- Phone-based auth API: `/api/auth/register`, `/api/auth/login`.
-- Profile update supports phone, blood type, and coordinates.
-- Blood bank inventory still supports CRUD-style update with audit log.
-- Added `recommendation_results` table.
-- Added analytics endpoints:
-  - `GET /api/analytics/summary`
-  - `GET /api/analytics/forecast?months=3`
-  - `POST /api/analytics/recommendations`
+## 4. Chạy Backend
 
-### Algorithms
-- Demand forecasting uses configurable moving average over recent OUT transactions.
-- Recommendation engine uses weighted scoring:
-  - Blood match
-  - Distance score using Haversine distance
-  - Eligibility based on last donation date
-  - Reliability score
+Mở terminal 1:
 
-### Frontend Changes
-- Login screen now uses phone number only; Register still collects account details.
-- Donor can select `Chưa xác định` for blood type.
-- Profile shows and edits phone number.
-- Only Donor and Hospital interfaces are shown in protected routes and navigation.
+```bash
+cd C:\Users\ADMIN\SBDCs
+conda activate sbdc
+python -m uvicorn backend.main:app --reload
+```
 
-## Cập nhật đăng nhập OTP
+Backend chạy tại:
 
-Luồng đăng nhập hiện tại dùng 2 bước:
+```text
+http://127.0.0.1:8000
+```
 
-1. Nhập số điện thoại tại màn hình Login.
-2. Hệ thống gọi `POST /api/auth/request-otp` để tạo OTP 6 số.
-3. Người dùng nhập OTP, hệ thống gọi `POST /api/auth/verify-otp` để cấp token.
+Swagger API:
 
-Trong môi trường demo/local, OTP được trả về trong response và in ra console backend để dễ kiểm thử. Khi triển khai thật, thay phần này bằng dịch vụ gửi SMS như Twilio, Firebase Authentication hoặc Zalo/SMS Gateway và không trả `otp_code` về frontend.
+```text
+http://127.0.0.1:8000/docs
+```
+
+## 5. Chạy Frontend
+
+Mở terminal 2:
+
+```bash
+cd C:\Users\ADMIN\SBDCs\frontend
+npm install
+npm run dev
+```
+
+Frontend chạy tại:
+
+```text
+http://localhost:3000
+```
+
+## 6. Không nên chạy chung khi demo
+
+File này đã chỉnh `npm run dev` chỉ chạy frontend để tránh lỗi `concurrently` trên Windows.
+
+Nếu thật sự muốn chạy cả backend + frontend cùng lúc:
+
+```bash
+npm run dev:all
+```
+
+Nhưng khi demo nên chạy 2 terminal riêng cho ổn định.
+
+## 7. Lưu ý database
+
+Nếu đổi từ ZIP cũ sang ZIP mới và gặp lỗi schema, hãy tắt backend rồi xóa:
+
+```text
+C:\Users\ADMIN\SBDCs\database.sqlite
+```
+
+Sau đó chạy lại backend để hệ thống tự tạo database mới.
+
+## 8. Cấu trúc frontend đã kiểm tra
+
+```text
+frontend/
+├── package.json
+├── package-lock.json
+├── index.html
+├── vite.config.js
+├── public/images/
+└── src/
+```
+
+## 9. Kiểm tra đã thực hiện
+
+- `python -m compileall backend`: OK
+- `npm install`: OK
+- `npm run build`: OK
+- ZIP có đủ file root frontend: OK

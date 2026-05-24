@@ -23,6 +23,23 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: Optional[str] = None
     email: Optional[str] = None
+    # Donor registration profile fields
+    birth_date: Optional[str] = None
+    gender: Optional[str] = None
+    citizen_id: Optional[str] = None
+    weight: Optional[float] = None
+    height: Optional[float] = None
+    address: Optional[str] = None
+    occupation: Optional[str] = None
+    # Hospital registration fields
+    hospital_name: Optional[str] = None
+    hospital_code: Optional[str] = None
+    city: Optional[str] = None
+    district: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_title: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
 
 class UserLogin(BaseModel):
     phone: Optional[str] = None
@@ -59,7 +76,23 @@ class AppointmentUpdateStatus(BaseModel):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    email: Optional[str] = None
     blood_type: Optional[str] = None
+    birth_date: Optional[str] = None
+    gender: Optional[str] = None
+    citizen_id: Optional[str] = None
+    weight: Optional[float] = None
+    height: Optional[float] = None
+    address: Optional[str] = None
+    occupation: Optional[str] = None
+    hospital_name: Optional[str] = None
+    hospital_code: Optional[str] = None
+    city: Optional[str] = None
+    district: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_title: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
 
 class RecommendationRequest(BaseModel):
     blood_type: str
@@ -82,3 +115,8 @@ class RecommendationSettings(RecommendationWeights):
     emergency_w_reliability: float = 0.10
     emergency_w_humanitarian: float = 0.05
     emergency_auto_adjust: bool = True
+
+class RecommendationEmailRequest(BaseModel):
+    recommendation_result_ids: list[int]
+    subject: Optional[str] = None
+    message: Optional[str] = None
