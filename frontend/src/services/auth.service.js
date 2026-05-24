@@ -24,6 +24,14 @@ export const authService = {
     const user = localStorage.getItem('user');
     return user ? JSON.parse(user) : null;
   },
+  getProfile: async () => {
+    const response = await api.get('/auth/profile');
+    if (response.data.user) {
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      window.dispatchEvent(new Event('sbdcs-auth-changed'));
+    }
+    return response.data;
+  },
   updateProfile: async (profileData) => {
     const response = await api.patch('/auth/profile', profileData);
     if (response.data.user) {
@@ -35,6 +43,10 @@ export const authService = {
   getHomepageMedia: async () => {
     const response = await api.get('/auth/homepage-media');
     return response.data;
+  },
+  getHospitalProfile: async () => {
+    const response = await api.get('/hospitals');
+    return Array.isArray(response.data) ? response.data[0] : response.data;
   },
   uploadHomepageMedia: async (mediaType, file) => {
     const formData = new FormData();

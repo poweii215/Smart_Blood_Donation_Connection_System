@@ -21,6 +21,14 @@ import {
   FileSpreadsheet,
   LockKeyhole,
   Megaphone,
+  Mail,
+  Calendar,
+  MapPin,
+  Briefcase,
+  Scale,
+  Ruler,
+  IdCard,
+  BadgeCheck,
 } from 'lucide-react';
 import { authService } from '../services/auth.service';
 import { applyAppearanceForUser, getScopedSetting, setScopedSetting, useI18n } from '../utils/userSettings';
@@ -29,16 +37,44 @@ const bloodTypes = ['UNKNOWN', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 
 const truthy = (value) => value === true || value === 'true';
 
+function buildFormDataFromUser(user, hospital = null) {
+  if (!user) {
+    return {
+      full_name: '', phone: '', email: '', blood_type: 'UNKNOWN', birth_date: '', gender: '',
+      citizen_id: '', weight: '', height: '', address: '', occupation: '',
+      hospital_name: '', hospital_code: '', city: '', district: '',
+      contact_name: '', contact_title: '', contact_phone: '', contact_email: '',
+    };
+  }
+  return {
+    full_name: user.full_name || '',
+    phone: user.phone || '',
+    email: user.email || '',
+    blood_type: user.blood_type || 'UNKNOWN',
+    birth_date: user.birth_date || '',
+    gender: user.gender || '',
+    citizen_id: user.citizen_id || '',
+    weight: user.weight ?? '',
+    height: user.height ?? '',
+    address: user.address || hospital?.address || '',
+    occupation: user.occupation || '',
+    hospital_name: hospital?.name || user.full_name || '',
+    hospital_code: hospital?.hospital_code || '',
+    city: hospital?.city || '',
+    district: hospital?.district || '',
+    contact_name: hospital?.contact_name || '',
+    contact_title: hospital?.contact_title || '',
+    contact_phone: hospital?.contact_person_phone || hospital?.contact_phone || user.phone || '',
+    contact_email: hospital?.contact_person_email || hospital?.contact_email || user.email || '',
+  };
+}
+
 export default function Settings() {
-  const user = authService.getCurrentUser();
+  const [user, setUser] = useState(() => authService.getCurrentUser());
   const isHospital = user?.role === 'HOSPITAL_ADMIN';
   const tr = useI18n(user);
 
-  const [formData, setFormData] = useState({
-    full_name: user?.full_name || '',
-    phone: user?.phone || '',
-    blood_type: user?.blood_type || 'UNKNOWN',
-  });
+  const [formData, setFormData] = useState(() => buildFormDataFromUser(user));
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
   const [previewUrl, setPreviewUrl] = useState(user?.avatar_url || '');
   const [avatarFile, setAvatarFile] = useState(null);
@@ -78,6 +114,40 @@ export default function Settings() {
   const [homepageFiles, setHomepageFiles] = useState({ hospital: null, activity: null });
   const [homepagePreviews, setHomepagePreviews] = useState({ hospital: '', activity: '' });
   const [homepageLoading, setHomepageLoading] = useState({ hospital: false, activity: false });
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  const applyUserToForm = (nextUser, hospital = null) => {
+    setUser(nextUser);
+    setFormData(buildFormDataFromUser(nextUser, hospital));
+    if (nextUser?.avatar_url) {
+      setAvatarUrl(nextUser.avatar_url);
+      setPreviewUrl(nextUser.avatar_url);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setProfileLoading(true);
+    authService.getProfile()
+      .then((data) => {
+        if (cancelled) return;
+        applyUserToForm(data.user, data.hospital);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setProfileLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const onAuthChanged = () => {
+      const next = authService.getCurrentUser();
+      if (next) setUser(next);
+    };
+    window.addEventListener('sbdcs-auth-changed', onAuthChanged);
+    return () => window.removeEventListener('sbdcs-auth-changed', onAuthChanged);
+  }, []);
 
   useEffect(() => {
     setScopedSetting('appearance', preferences.appearance, user);
@@ -142,15 +212,49 @@ export default function Settings() {
     }
   };
 
+  const buildProfilePayload = () => (
+    isHospital
+      ? {
+          full_name: formData.hospital_name || formData.full_name,
+          phone: formData.phone,
+          email: formData.email,
+          hospital_name: formData.hospital_name,
+          hospital_code: formData.hospital_code,
+          address: formData.address,
+          city: formData.city,
+          district: formData.district,
+          contact_name: formData.contact_name,
+          contact_title: formData.contact_title,
+          contact_phone: formData.contact_phone,
+          contact_email: formData.contact_email,
+        }
+      : {
+          full_name: formData.full_name,
+          phone: formData.phone,
+          email: formData.email,
+          blood_type: formData.blood_type,
+          birth_date: formData.birth_date || null,
+          gender: formData.gender || null,
+          citizen_id: formData.citizen_id || null,
+          weight: formData.weight ? Number(formData.weight) : null,
+          height: formData.height ? Number(formData.height) : null,
+          address: formData.address || null,
+          occupation: formData.occupation || null,
+        }
+  );
+
+  const persistProfile = async () => {
+    const res = await authService.updateProfile(buildProfilePayload());
+    applyUserToForm(res.user, res.hospital);
+    return res;
+  };
+
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage({ type: '', text: '' });
     try {
-      const payload = isHospital
-        ? { full_name: formData.full_name, phone: formData.phone }
-        : formData;
-      await authService.updateProfile(payload);
+      await persistProfile();
       setMessage({ type: 'success', text: tr('profileUpdated') });
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.detail || tr('profileFailed') });
@@ -191,7 +295,20 @@ export default function Settings() {
     Object.entries(isHospital ? hospitalSettings : donorSettings).forEach(([key, value]) => setScopedSetting(key, value, user));
 
     applyAppearanceForUser(user);
-    setMessage({ type: 'success', text: isHospital ? tr('savedHospital') : tr('savedDonor') });
+  };
+
+  const handleSaveAll = async () => {
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    try {
+      await persistProfile();
+      saveLocalSettings();
+      setMessage({ type: 'success', text: tr('savedAllSettings') });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.response?.data?.detail || tr('profileFailed') });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleHomepageImageChange = (mediaType, file) => {
@@ -245,24 +362,25 @@ export default function Settings() {
   const displayAvatar = previewUrl || avatarUrl;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-red-600 dark:text-red-400">{tr('settingsCenter')}</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 dark:text-slate-50">{isHospital ? tr('hospitalSettingsTitle') : tr('donorSettingsTitle')}</h1>
-          <p className="mt-1 max-w-3xl text-slate-500 dark:text-slate-400">{isHospital ? tr('hospitalSettingsIntro') : tr('donorSettingsIntro')}</p>
-          <p className="mt-2 inline-flex rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-600 dark:bg-red-950/40 dark:text-red-300">
-            {tr('settingsScope', { role: isHospital ? tr('hospital') : tr('donor') })}
-          </p>
+    <div className="mx-auto max-w-6xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <section className="overflow-hidden rounded-3xl border border-red-100 bg-gradient-to-r from-red-50 via-white to-white p-5 shadow-sm dark:border-red-900/50 dark:from-red-950/30 dark:via-slate-900 dark:to-slate-900 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">{isHospital ? tr('hospitalSettingsIntro') : tr('donorSettingsIntro')}</p>
+            <p className="mt-3 inline-flex rounded-full bg-white/80 px-3 py-1 text-xs font-black text-red-600 ring-1 ring-red-100 dark:bg-slate-950/60 dark:text-red-300 dark:ring-red-900">
+              {tr('settingsScope', { role: isHospital ? tr('hospital') : tr('donor') })}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveAll}
+            disabled={loading || profileLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-200 transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:shadow-red-950/30"
+          >
+            <Save className="h-5 w-5" /> {loading ? tr('saving') : tr('saveAllSettings')}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={saveLocalSettings}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:bg-black dark:bg-red-600 dark:shadow-red-950/30 dark:hover:bg-red-700"
-        >
-          <Save className="h-5 w-5" /> {tr('saveAllSettings')}
-        </button>
-      </header>
+      </section>
 
       {message.text && (
         <div className={`rounded-2xl border p-4 text-sm font-bold ${message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200'}`}>
@@ -284,6 +402,7 @@ export default function Settings() {
           handleAvatarChange={handleAvatarChange}
           handleAvatarUpload={handleAvatarUpload}
           handleProfileSubmit={handleProfileSubmit}
+          profileLoading={profileLoading}
         />
 
         <div className="space-y-6">
@@ -331,7 +450,7 @@ export default function Settings() {
   );
 }
 
-function AccountCard({ tr, isHospital, user, formData, setFormData, displayAvatar, avatarLoading, avatarFile, loading, handleAvatarChange, handleAvatarUpload, handleProfileSubmit }) {
+function AccountCard({ tr, isHospital, user, formData, setFormData, displayAvatar, avatarLoading, avatarFile, loading, profileLoading, handleAvatarChange, handleAvatarUpload, handleProfileSubmit }) {
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="border-b border-slate-100 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-900/70">
@@ -378,30 +497,77 @@ function AccountCard({ tr, isHospital, user, formData, setFormData, displayAvata
       </div>
 
       <form onSubmit={handleProfileSubmit} className="space-y-6 border-t border-slate-100 p-6 dark:border-slate-800">
+        {profileLoading && (
+          <p className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+            {tr('loadingProfile')}
+          </p>
+        )}
         <div className={`flex gap-2 rounded-2xl border p-4 text-sm font-bold ${isHospital ? 'border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200' : 'border-red-100 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200'}`}>
           {isHospital ? <LockKeyhole className="h-5 w-5 shrink-0" /> : <HeartHandshake className="h-5 w-5 shrink-0" />}
           {isHospital ? tr('hospitalSecureAccountNote') : tr('phoneLoginReason')}
         </div>
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <Field icon={isHospital ? Building2 : User} label={isHospital ? tr('hospitalDisplayName') : tr('fullName')} value={formData.full_name} onChange={v => setFormData({ ...formData, full_name: v })} required />
-          <Field icon={Phone} label={tr('phone')} value={formData.phone} onChange={v => setFormData({ ...formData, phone: v })} type="tel" required />
-          {!isHospital && (
-            <div className="space-y-2">
-              <label className="ml-1 text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{tr('bloodType')}</label>
-              <div className="relative">
-                <Droplets className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                <select
-                  value={formData.blood_type}
-                  onChange={(e) => setFormData({ ...formData, blood_type: e.target.value })}
-                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 font-semibold text-slate-900 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  {bloodTypes.map(type => <option key={type} value={type}>{type === 'UNKNOWN' ? tr('unknown') : type}</option>)}
-                </select>
+        {isHospital ? (
+          <div className="space-y-6">
+            <div>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-blue-600 dark:text-blue-300"><Building2 className="h-4 w-4" /> Thông tin đơn vị</h3>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <Field icon={Building2} label="Tên bệnh viện" value={formData.hospital_name} onChange={v => setFormData({ ...formData, hospital_name: v })} required />
+                <Field icon={BadgeCheck} label="Mã bệnh viện" value={formData.hospital_code} onChange={v => setFormData({ ...formData, hospital_code: v })} />
+                <Field icon={Phone} label="Số điện thoại bệnh viện" value={formData.phone} onChange={v => setFormData({ ...formData, phone: v })} type="tel" required />
+                <Field icon={Mail} label="Email bệnh viện" value={formData.email} onChange={v => setFormData({ ...formData, email: v })} type="email" />
+                <Field icon={MapPin} label="Địa chỉ bệnh viện" value={formData.address} onChange={v => setFormData({ ...formData, address: v })} className="md:col-span-2" />
+                <Field icon={MapPin} label="Tỉnh/Thành phố" value={formData.city} onChange={v => setFormData({ ...formData, city: v })} />
+                <Field icon={MapPin} label="Quận/Huyện" value={formData.district} onChange={v => setFormData({ ...formData, district: v })} />
               </div>
             </div>
-          )}
-        </div>
-        <button type="submit" disabled={loading} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 py-4 font-black text-white shadow-lg shadow-red-100 hover:bg-red-700 disabled:opacity-50 dark:shadow-red-950/30">
+            <div>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-blue-600 dark:text-blue-300"><User className="h-4 w-4" /> Người liên hệ</h3>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <Field icon={User} label="Họ tên người liên hệ" value={formData.contact_name} onChange={v => setFormData({ ...formData, contact_name: v })} />
+                <Field icon={Briefcase} label="Chức vụ" value={formData.contact_title} onChange={v => setFormData({ ...formData, contact_title: v })} />
+                <Field icon={Phone} label="SĐT người liên hệ" value={formData.contact_phone} onChange={v => setFormData({ ...formData, contact_phone: v })} type="tel" />
+                <Field icon={Mail} label="Email người liên hệ" value={formData.contact_email} onChange={v => setFormData({ ...formData, contact_email: v })} type="email" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-red-600 dark:text-red-300"><User className="h-4 w-4" /> Thông tin cá nhân</h3>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <Field icon={User} label={tr('fullName')} value={formData.full_name} onChange={v => setFormData({ ...formData, full_name: v })} required />
+                <Field icon={Calendar} label="Ngày sinh" value={formData.birth_date} onChange={v => setFormData({ ...formData, birth_date: v })} type="date" />
+                <SelectRow label="Giới tính" value={formData.gender} onChange={v => setFormData({ ...formData, gender: v })} options={[["", "Chọn giới tính"], ["MALE", "Nam"], ["FEMALE", "Nữ"], ["OTHER", "Khác"]]} />
+                <Field icon={Phone} label={tr('phone')} value={formData.phone} onChange={v => setFormData({ ...formData, phone: v })} type="tel" required />
+                <Field icon={Mail} label="Email" value={formData.email} onChange={v => setFormData({ ...formData, email: v })} type="email" />
+                <Field icon={IdCard} label="Số CMND/CCCD" value={formData.citizen_id} onChange={v => setFormData({ ...formData, citizen_id: v })} />
+              </div>
+            </div>
+            <div>
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-red-600 dark:text-red-300"><Droplets className="h-4 w-4" /> Thông tin hiến máu</h3>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="ml-1 text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{tr('bloodType')}</label>
+                  <div className="relative">
+                    <Droplets className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    <select
+                      value={formData.blood_type}
+                      onChange={(e) => setFormData({ ...formData, blood_type: e.target.value })}
+                      className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 font-semibold text-slate-900 outline-none transition focus:border-red-500 focus:ring-4 focus:ring-red-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    >
+                      {bloodTypes.map(type => <option key={type} value={type}>{type === 'UNKNOWN' ? tr('unknown') : type}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <Field icon={Scale} label="Cân nặng (kg)" value={formData.weight} onChange={v => setFormData({ ...formData, weight: v })} type="number" />
+                <Field icon={Ruler} label="Chiều cao (cm)" value={formData.height} onChange={v => setFormData({ ...formData, height: v })} type="number" />
+                <Field icon={Briefcase} label="Nghề nghiệp" value={formData.occupation} onChange={v => setFormData({ ...formData, occupation: v })} />
+                <Field icon={MapPin} label="Địa chỉ thường trú" value={formData.address} onChange={v => setFormData({ ...formData, address: v })} className="md:col-span-2" />
+              </div>
+            </div>
+          </div>
+        )}
+        <button type="submit" disabled={loading || profileLoading} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 py-4 font-black text-white shadow-lg shadow-red-100 hover:bg-red-700 disabled:opacity-50 dark:shadow-red-950/30">
           <Save className="h-5 w-5" /> {loading ? tr('saving') : tr('savePersonalInfo')}
         </button>
       </form>
@@ -418,10 +584,6 @@ function DonorSettings({ tr, preferences, setPreferences }) {
         <InfoBox tone="red" icon={HeartHandshake} text={tr('donorSettingsOnlyNote')} />
       </SettingsCard>
 
-      <SettingsCard icon={HeartHandshake} title={tr('donorPrivacyScope')} desc={tr('donorPrivacyScopeDesc')}>
-        <InfoBox tone="emerald" icon={User} text={tr('donorCanOnlyEditSelf')} />
-        <InfoBox tone="blue" icon={Bell} text={tr('donorReceivesOnlyRelevantAlerts')} />
-      </SettingsCard>
     </section>
   );
 }
@@ -554,9 +716,9 @@ function NumberRow({ label, value, onChange, hint }) {
   );
 }
 
-function Field({ icon: Icon, label, value, onChange, type = 'text', required = false }) {
+function Field({ icon: Icon, label, value, onChange, type = 'text', required = false, className = '' }) {
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${className}`}>
       <label className="ml-1 text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</label>
       <div className="relative">
         <Icon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
