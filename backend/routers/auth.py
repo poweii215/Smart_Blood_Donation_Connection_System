@@ -181,28 +181,28 @@ async def verify_otp():
 @router.post("/profile/avatar")
 async def upload_avatar(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Upload/change current user's avatar image."""
+    from ..core.cloudinary_config import upload_to_cloudinary
+    
     allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Chỉ hỗ trợ ảnh JPG, PNG, WEBP hoặc GIF")
-
-    uploads_dir = Path(os.getcwd()) / "uploads" / "avatars"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-
-    original_name = file.filename or "avatar"
-    suffix = Path(original_name).suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
-        suffix = ".jpg"
-
-    safe_name = f"user_{current_user['id']}_{uuid.uuid4().hex[:12]}{suffix}"
-    destination = uploads_dir / safe_name
 
     content = await file.read()
     max_size = 3 * 1024 * 1024
     if len(content) > max_size:
         raise HTTPException(status_code=400, detail="Ảnh đại diện không được vượt quá 3MB")
-    destination.write_bytes(content)
-
-    avatar_url = f"/uploads/avatars/{safe_name}"
+    
+    # Reset file stream for Cloudinary upload
+    from io import BytesIO
+    file.file = BytesIO(content)
+    file.file.seek(0)
+    
+    try:
+        upload_result = await upload_to_cloudinary(file, folder="avatars")
+        avatar_url = upload_result["url"]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     conn = get_db_connection()
     cursor = get_cursor(conn)
     try:
@@ -343,6 +343,9 @@ async def upload_homepage_media(media_type: str, file: UploadFile = File(...), c
     - hospital: hospital showcase image on landing page
     - activity: people donating/activity image on landing page
     """
+    from ..core.cloudinary_config import upload_to_cloudinary
+    from io import BytesIO
+    
     _require_hospital_admin(current_user)
     if media_type not in {"hospital", "activity"}:
         raise HTTPException(status_code=400, detail="media_type phải là hospital hoặc activity")
@@ -351,23 +354,21 @@ async def upload_homepage_media(media_type: str, file: UploadFile = File(...), c
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Chỉ hỗ trợ ảnh JPG, PNG, WEBP hoặc GIF")
 
-    original_name = file.filename or "homepage"
-    suffix = Path(original_name).suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
-        suffix = ".jpg"
-
     content = await file.read()
     max_size = 5 * 1024 * 1024
     if len(content) > max_size:
         raise HTTPException(status_code=400, detail="Ảnh trang chủ không được vượt quá 5MB")
 
-    uploads_dir = Path(os.getcwd()) / "uploads" / "homepage"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = f"{media_type}_{uuid.uuid4().hex[:12]}{suffix}"
-    destination = uploads_dir / safe_name
-    destination.write_bytes(content)
+    # Reset file stream for Cloudinary upload
+    file.file = BytesIO(content)
+    file.file.seek(0)
+    
+    try:
+        upload_result = await upload_to_cloudinary(file, folder="homepage")
+        media_url = upload_result["url"]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    media_url = f"/uploads/homepage/{safe_name}"
     column = "hospital_image_url" if media_type == "hospital" else "donor_activity_image_url"
 
     conn = get_db_connection()

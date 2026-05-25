@@ -9,6 +9,7 @@
     "dev:frontend": "vite",
     "dev:backend": "cd .. && python -m uvicorn backend.main:app --reload",
     "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "prebuild": "npm install --legacy-peer-deps",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rmdir /s /q dist",

@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 import os
 
 from .database import init_db
+from .core.cloudinary_config import init_cloudinary
 from .routers import auth, bloodbank, appointments, hospitals, analytics, chatbot
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -16,6 +17,11 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize Database on startup
     init_db()
+    # Initialize Cloudinary
+    try:
+        init_cloudinary()
+    except ValueError as e:
+        print(f"Warning: Cloudinary not configured: {e}")
     yield
     # Cleanup on shutdown (if needed)
 
