@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, HeartHandshake, Mail, Save, Search, Send, Settings2, Shield, Siren, SlidersHorizontal, Zap } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { AlertTriangle, CheckCircle2, HeartHandshake, Mail, Save, Search, Send, Settings2, Shield, Siren, SlidersHorizontal, Zap, Lock } from 'lucide-react';
 import { analyticsService } from '../services/analytics.service';
 import { authService } from '../services/auth.service';
 import { useI18n } from '../utils/userSettings';
 
 const BLOOD_TYPES = ['O-','O+','A-','A+','B-','B+','AB-','AB+'];
+const WEIGHT_KEYS = ['w_blood', 'w_eligibility', 'w_reliability', 'w_humanitarian'];
 
 export default function Recommendation() {
   const user = authService.getCurrentUser();
@@ -19,6 +20,8 @@ export default function Recommendation() {
   const [selectedResultIds, setSelectedResultIds] = useState([]);
   const [sendingEmails, setSendingEmails] = useState(false);
   const [emailResult, setEmailResult] = useState(null);
+  // Track whether current recommendation is in emergency mode for this blood type
+  const [isEmergencyActive, setIsEmergencyActive] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -34,11 +37,62 @@ export default function Recommendation() {
     load();
   }, []);
 
-  const updateWeight = (key, value) => {
-    setWeightSettings(prev => ({ ...prev, [key]: Number(value) }));
+  // Compute total weight from the 4 normal sliders
+  const totalWeight = useMemo(() => {
+    if (!weightSettings) return 0;
+    return Math.round(
+      ((weightSettings.w_blood || 0) +
+       (weightSettings.w_eligibility || 0) +
+       (weightSettings.w_reliability || 0) +
+       (weightSettings.w_humanitarian || 0)) * 100
+    ) / 100;
+  }, [weightSettings]);
+
+  const isSlidersLocked = !!(weightSettings?.emergency_auto_adjust && isEmergencyActive);
+
+  // When sliders are locked (emergency), show emergency weights on the main sliders
+  const displayWeights = useMemo(() => {
+    if (!weightSettings) return {};
+    if (isSlidersLocked) {
+      return {
+        w_blood: weightSettings.emergency_w_blood ?? 0.60,
+        w_eligibility: weightSettings.emergency_w_eligibility ?? 0.25,
+        w_reliability: weightSettings.emergency_w_reliability ?? 0.10,
+        w_humanitarian: weightSettings.emergency_w_humanitarian ?? 0.05,
+      };
+    }
+    return {
+      w_blood: weightSettings.w_blood,
+      w_eligibility: weightSettings.w_eligibility,
+      w_reliability: weightSettings.w_reliability,
+      w_humanitarian: weightSettings.w_humanitarian,
+    };
+  }, [weightSettings, isSlidersLocked]);
+
+  // Update a weight while keeping total <= 1.00
+  const updateWeight = (key, rawValue) => {
+    const value = Math.round(Number(rawValue) * 100) / 100;
+    setWeightSettings(prev => {
+      if (!prev) return prev;
+      const others = WEIGHT_KEYS.filter(k => k !== key).reduce((sum, k) => sum + (prev[k] || 0), 0);
+      const maxAllowed = Math.round((1 - others) * 100) / 100;
+      const clamped = Math.min(value, maxAllowed);
+      return { ...prev, [key]: clamped };
+    });
+  };
+
+  // Compute max allowed for each slider given others' current values
+  const getMax = (key) => {
+    if (!weightSettings) return 1;
+    const others = WEIGHT_KEYS.filter(k => k !== key).reduce((sum, k) => sum + (weightSettings[k] || 0), 0);
+    return Math.round((1 - others) * 100) / 100;
   };
 
   const saveWeightSettings = async () => {
+    if (Math.abs(totalWeight - 1) > 0.01) {
+      alert(`Tổng trọng số hiện tại là ${(totalWeight * 100).toFixed(0)}%. Vui lòng điều chỉnh để tổng bằng đúng 100% trước khi lưu.`);
+      return;
+    }
     try {
       setSaving(true);
       const saved = await analyticsService.updateRecommendationSettings(weightSettings);
@@ -59,6 +113,18 @@ export default function Recommendation() {
       setRecommendation(result);
       setSelectedResultIds([]);
       setEmailResult(null);
+      // Update emergency state based on backend response
+      setIsEmergencyActive(!!result.emergency_mode);
+      // If emergency mode triggered, sync displayed weights to emergency weights from the result
+      if (result.emergency_mode && result.weights_used && weightSettings) {
+        setWeightSettings(prev => ({
+          ...prev,
+          emergency_w_blood: result.weights_used.w_blood ?? prev.emergency_w_blood,
+          emergency_w_eligibility: result.weights_used.w_eligibility ?? prev.emergency_w_eligibility,
+          emergency_w_reliability: result.weights_used.w_reliability ?? prev.emergency_w_reliability,
+          emergency_w_humanitarian: result.weights_used.w_humanitarian ?? prev.emergency_w_humanitarian,
+        }));
+      }
     } catch (err) {
       console.error('Failed to run recommendation', err);
       alert(tr('recommendationRunFailed'));
@@ -105,6 +171,9 @@ export default function Recommendation() {
 
   if (loading) return <div className="font-semibold text-slate-400">{tr('loadingRecommendationSettings')}</div>;
 
+  const totalPct = Math.round(totalWeight * 100);
+  const totalOk = Math.abs(totalWeight - 1) <= 0.01;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -119,7 +188,8 @@ export default function Recommendation() {
         </div>
         <button
           onClick={saveWeightSettings}
-          disabled={saving || !weightSettings}
+          disabled={saving || !weightSettings || !totalOk}
+          title={!totalOk ? `Tổng trọng số phải bằng 100% (hiện tại: ${totalPct}%)` : ''}
           className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gray-900 px-5 py-3 text-sm font-black text-white shadow-lg hover:bg-black disabled:opacity-60"
         >
           <Save className="w-4 h-4" /> {saving ? tr('savingWeights') : tr('saveWeights')}
@@ -137,18 +207,66 @@ export default function Recommendation() {
               <input
                 type="checkbox"
                 checked={!!weightSettings.emergency_auto_adjust}
-                onChange={(e) => setWeightSettings({ ...weightSettings, emergency_auto_adjust: e.target.checked })}
+                onChange={(e) => {
+                  setWeightSettings({ ...weightSettings, emergency_auto_adjust: e.target.checked });
+                  if (!e.target.checked) setIsEmergencyActive(false);
+                }}
                 className="accent-red-600"
               />
               {tr('autoAdjustEmergency')}
             </label>
           </div>
 
+          {/* Emergency mode active banner */}
+          {isSlidersLocked && (
+            <div className="mb-4 flex items-center gap-3 rounded-2xl bg-red-100 border border-red-200 px-4 py-3 text-sm font-bold text-red-700">
+              <Lock className="w-4 h-4 flex-shrink-0" />
+              <span>
+                Nhóm máu <strong>{bloodType}</strong> đang khẩn cấp — trọng số đã tự động chuyển sang chế độ Emergency và bị khóa.
+                Tắt "Tự điều chỉnh khi khẩn cấp" nếu muốn chỉnh tay.
+              </span>
+            </div>
+          )}
+
+          {/* Total weight indicator */}
+          <div className={`mb-4 flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-black border ${totalOk ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+            <span>Tổng trọng số hiện tại</span>
+            <span className="text-base">{totalPct}% {totalOk ? '✓' : `— cần điều chỉnh thêm ${100 - totalPct}%`}</span>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <WeightInput label="BloodMatch" value={weightSettings.w_blood} onChange={(v)=>updateWeight('w_blood', v)} note={tr('bloodMatchNote')} />
-            <WeightInput label="Eligibility" value={weightSettings.w_eligibility} onChange={(v)=>updateWeight('w_eligibility', v)} note={tr('eligibilityNote')} />
-            <WeightInput label="Reliability" value={weightSettings.w_reliability} onChange={(v)=>updateWeight('w_reliability', v)} note={tr('reliabilityNote')} />
-            <WeightInput label="Humanitarian" value={weightSettings.w_humanitarian} onChange={(v)=>updateWeight('w_humanitarian', v)} note={tr('humanitarianNote')} />
+            <WeightInput
+              label="BloodMatch"
+              value={displayWeights.w_blood}
+              onChange={(v) => updateWeight('w_blood', v)}
+              note={tr('bloodMatchNote')}
+              locked={isSlidersLocked}
+              max={isSlidersLocked ? 1 : getMax('w_blood')}
+            />
+            <WeightInput
+              label="Eligibility"
+              value={displayWeights.w_eligibility}
+              onChange={(v) => updateWeight('w_eligibility', v)}
+              note={tr('eligibilityNote')}
+              locked={isSlidersLocked}
+              max={isSlidersLocked ? 1 : getMax('w_eligibility')}
+            />
+            <WeightInput
+              label="Reliability"
+              value={displayWeights.w_reliability}
+              onChange={(v) => updateWeight('w_reliability', v)}
+              note={tr('reliabilityNote')}
+              locked={isSlidersLocked}
+              max={isSlidersLocked ? 1 : getMax('w_reliability')}
+            />
+            <WeightInput
+              label="Humanitarian"
+              value={displayWeights.w_humanitarian}
+              onChange={(v) => updateWeight('w_humanitarian', v)}
+              note={tr('humanitarianNote')}
+              locked={isSlidersLocked}
+              max={isSlidersLocked ? 1 : getMax('w_humanitarian')}
+            />
           </div>
 
           <div className="mt-6 rounded-3xl border border-red-100 bg-red-50 p-5">
@@ -173,7 +291,7 @@ export default function Recommendation() {
           <p className="text-sm text-gray-500 mt-1">{tr('runRecommendationDesc')}</p>
 
           <label className="block mt-5 text-xs font-black text-gray-400 uppercase tracking-widest">{tr('bloodType')}</label>
-          <select value={bloodType} onChange={(e)=>setBloodType(e.target.value)} className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm font-black outline-none focus:border-red-400">
+          <select value={bloodType} onChange={(e) => { setBloodType(e.target.value); setIsEmergencyActive(false); }} className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm font-black outline-none focus:border-red-400">
             {BLOOD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
 
@@ -255,12 +373,32 @@ export default function Recommendation() {
   );
 }
 
-function WeightInput({ label, value, onChange, note }) {
-  return <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-slate-700 dark:bg-slate-900">
-    <div className="flex items-center justify-between"><label className="text-sm font-black text-gray-800">{label}</label><span className="text-xs font-black text-red-600">{Math.round((value || 0) * 100)}%</span></div>
-    <input type="range" min="0" max="1" step="0.05" value={value || 0} onChange={(e)=>onChange(e.target.value)} className="w-full mt-3 accent-red-600" />
-    <p className="text-xs text-gray-500 mt-2 leading-relaxed">{note}</p>
-  </div>;
+function WeightInput({ label, value, onChange, note, locked, max }) {
+  return (
+    <div className={`rounded-2xl border p-4 ${locked ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50 dark:border-slate-700 dark:bg-slate-900'}`}>
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-2 text-sm font-black text-gray-800">
+          {label}
+          {locked && <Lock className="w-3 h-3 text-red-500" />}
+        </label>
+        <span className="text-xs font-black text-red-600">{Math.round((value || 0) * 100)}%</span>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max={locked ? 1 : max}
+        step="0.05"
+        value={value || 0}
+        onChange={(e) => !locked && onChange(e.target.value)}
+        disabled={locked}
+        className={`w-full mt-3 ${locked ? 'accent-red-400 opacity-60 cursor-not-allowed' : 'accent-red-600 cursor-pointer'}`}
+      />
+      {locked
+        ? <p className="text-xs text-red-500 mt-2 font-semibold">Đang dùng trọng số khẩn cấp — bị khóa</p>
+        : <p className="text-xs text-gray-500 mt-2 leading-relaxed">{note} (tối đa {Math.round((max || 0) * 100)}%)</p>
+      }
+    </div>
+  );
 }
 
 function EmergencyBox({ label, value }) {
