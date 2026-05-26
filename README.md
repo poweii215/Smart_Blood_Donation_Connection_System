@@ -1,5 +1,7 @@
 # Smart Blood Donation Connection System
 
+# Link deploy trên vercel: https://smart-blood-donation-connection-sys-three.vercel.app/
+
 ## 1. Giới thiệu dự án
 
 Smart Blood Donation Connection System là hệ thống web hỗ trợ kết nối người hiến máu với bệnh viện/ngân hàng máu.
